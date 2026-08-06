@@ -1,0 +1,37 @@
+{
+  "name": "@contextflo/postgres-mcp",
+  "version": "0.0.0",
+  "description": "The analytics MCP server for Postgres — read-only by construction, with schema context that makes answers correct.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "bin": {
+    "postgres-mcp": "dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "db:up": "docker compose -f docker-compose.test.yml up -d --wait",
+    "db:down": "docker compose -f docker-compose.test.yml down -v"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "libpg-query": "^17.7.4",
+    "pg": "^8.16.3",
+    "pg-connection-string": "^2.9.1",
+    "pg-cursor": "^2.15.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.3",
+    "@types/pg": "^8.15.5",
+    "@types/pg-cursor": "^2.7.2",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  }
+}
