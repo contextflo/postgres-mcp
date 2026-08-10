@@ -1,0 +1,24 @@
+# Running postgres-mcp as a remote endpoint — e.g. on an EC2 instance your agent reaches.
+#
+# Read this before deploying it: binding 0.0.0.0 puts a live database connection on a
+# port. Queries stay read-only, so the risk is that anyone who reaches the port can read
+# every table this connection can see — which is still your whole database. Set
+# AUTH_TOKEN, keep the port inside a private network or security group, and put TLS in
+# front of it, because the bearer token crosses the wire in plaintext otherwise.
+services:
+  postgres-mcp:
+    image: ghcr.io/contextflo/postgres-mcp:latest
+    command: ['--http', '--host', '0.0.0.0', '--port', '8080']
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL, ideally for a read-only role}
+      AUTH_TOKEN: ${AUTH_TOKEN:?set AUTH_TOKEN to something long and random}
+    ports:
+      # Publish to loopback only and reach it through a tunnel or reverse proxy.
+      # Change to "8080:8080" only when the host itself is not publicly reachable.
+      - '127.0.0.1:8080:8080'
+    volumes:
+      # Holds context.md (read) and log.md (written). Mount it read-write, or add
+      # --no-log to the command above and mount it :ro if you would rather not keep an
+      # audit trail on this box.
+      - ./.contextflo:/app/.contextflo
+    restart: unless-stopped

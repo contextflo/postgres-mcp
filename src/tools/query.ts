@@ -1,8 +1,8 @@
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
-import type { Database } from '../db/pool.js'
 import { describeQueryError } from '../db/errors.js'
 import { SafetyError } from '../safety/errors.js'
 import { validateReadOnlySql } from '../safety/validate.js'
+import type { ToolContext } from './context.js'
 
 /**
  * Name, argument, and result shape match the archived
@@ -14,7 +14,8 @@ export const QUERY_TOOL = {
   description:
     'Run a read-only SQL query against the Postgres database. Accepts a single SELECT ' +
     '(including WITH ... SELECT), EXPLAIN, or SHOW statement. Writes, DDL, multiple ' +
-    'statements, and SET are rejected.',
+    'statements, and SET are rejected. information_schema and pg_catalog are readable, so ' +
+    'schema questions this server has no tool for can be answered with plain SQL.',
   inputSchema: {
     type: 'object' as const,
     properties: {
@@ -27,13 +28,8 @@ export const QUERY_TOOL = {
   },
 }
 
-export interface QueryToolOptions {
-  maxRows: number
-}
-
 export async function runQueryTool(
-  database: Database,
-  options: QueryToolOptions,
+  context: ToolContext,
   args: Record<string, unknown> | undefined
 ): Promise<CallToolResult> {
   const sql = args?.sql
@@ -46,17 +42,29 @@ export async function runQueryTool(
     validateReadOnlySql(sql)
   } catch (error) {
     if (error instanceof SafetyError) {
+      context.log.record({ sql, outcome: 'rejected', message: error.message })
       return toolError(error.message)
     }
     throw error
   }
 
+  const startedAt = Date.now()
+
   let result
   try {
-    result = await database.runReadOnly(sql, options.maxRows)
+    result = await context.database.runReadOnly(sql, context.maxRows)
   } catch (error) {
-    return toolError(describeQueryError(error))
+    const message = describeQueryError(error)
+    context.log.record({ sql, outcome: 'error', durationMs: Date.now() - startedAt, message })
+    return toolError(message)
   }
+
+  context.log.record({
+    sql,
+    outcome: 'ok',
+    rowCount: result.rows.length,
+    durationMs: Date.now() - startedAt,
+  })
 
   const content: CallToolResult['content'] = [
     { type: 'text', text: JSON.stringify(result.rows.map(toJsonSafe), null, 2) },
@@ -66,7 +74,7 @@ export async function runQueryTool(
     content.push({
       type: 'text',
       text:
-        `Results truncated to ${options.maxRows} rows. Add LIMIT/aggregation to narrow the query, ` +
+        `Results truncated to ${context.maxRows} rows. Add LIMIT/aggregation to narrow the query, ` +
         'or start the server with --max-rows to raise the cap.',
     })
   }

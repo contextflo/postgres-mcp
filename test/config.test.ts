@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   ConfigError,
+  DEFAULT_HTTP_HOST,
+  DEFAULT_HTTP_PORT,
   DEFAULT_MAX_ROWS,
   DEFAULT_STATEMENT_TIMEOUT_MS,
   HelpRequested,
@@ -17,10 +19,12 @@ afterEach(() => {
 describe('parseArgs', () => {
   it('takes the connection string as the first positional argument', () => {
     // Matches the archived server, so migrating is a package-name swap.
-    expect(parseArgs(['postgres://localhost/app'])).toEqual({
+    expect(parseArgs(['postgres://localhost/app'])).toMatchObject({
+      command: 'serve',
       connectionString: 'postgres://localhost/app',
       maxRows: DEFAULT_MAX_ROWS,
       statementTimeoutMs: DEFAULT_STATEMENT_TIMEOUT_MS,
+      http: undefined,
     })
   })
 
@@ -61,8 +65,38 @@ describe('parseArgs', () => {
     expect(() => parseArgs(['postgres://a', 'postgres://b'])).toThrow(ConfigError)
   })
 
-  it('points --http at the future release rather than failing obscurely', () => {
-    expect(() => parseArgs(['postgres://localhost/app', '--http'])).toThrow(/stdio only/)
+  it('binds HTTP to loopback unless told otherwise', () => {
+    // Exposing a database to the network should take a deliberate flag, never a default.
+    expect(parseArgs(['postgres://localhost/app', '--http'], {}).http).toEqual({
+      host: DEFAULT_HTTP_HOST,
+      port: DEFAULT_HTTP_PORT,
+      authToken: undefined,
+    })
+  })
+
+  it('takes the bearer token from AUTH_TOKEN', () => {
+    const config = parseArgs(['postgres://localhost/app', '--http', '--host', '0.0.0.0', '--port', '9000'], {
+      AUTH_TOKEN: 'secret',
+    })
+
+    expect(config.http).toEqual({ host: '0.0.0.0', port: 9000, authToken: 'secret' })
+  })
+
+  it('parses the init command', () => {
+    expect(parseArgs(['init', 'postgres://localhost/app']).command).toBe('init')
+    expect(() => parseArgs(['postgres://localhost/app', 'init'])).toThrow(ConfigError)
+  })
+
+  it('puts the log beside the context file', () => {
+    const config = parseArgs(['postgres://localhost/app', '--context-file', 'docs/db/context.md'])
+
+    expect(config.contextDirectory).toBe('docs/db')
+  })
+
+  it('rejects contradictory logging flags', () => {
+    expect(() => parseArgs(['postgres://localhost/app', '--log-file', 'a.md', '--no-log'])).toThrow(
+      ConfigError
+    )
   })
 
   it('treats --help as a success, not an error', () => {

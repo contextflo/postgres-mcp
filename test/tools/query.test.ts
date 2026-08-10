@@ -1,6 +1,9 @@
 import { beforeAll, describe, expect, it } from 'vitest'
+import { emptyContextDocument } from '../../src/context/context-file.js'
 import type { Database, ReadOnlyResult } from '../../src/db/pool.js'
+import { QueryLog } from '../../src/log.js'
 import { ensureParserReady } from '../../src/safety/validate.js'
+import type { ToolContext } from '../../src/tools/context.js'
 import { runQueryTool } from '../../src/tools/query.js'
 
 beforeAll(async () => {
@@ -8,13 +11,20 @@ beforeAll(async () => {
 })
 
 /** Stands in for a live database so the tool's own behavior can be tested without one. */
-function fakeDatabase(result: ReadOnlyResult | Error): Database {
-  return {
-    runReadOnly: async () => {
-      if (result instanceof Error) throw result
-      return result
-    },
-  } as unknown as Database
+function fakeDatabase(result: ReadOnlyResult | Error, maxRows = 10): ToolContext {
+  return toolContext(
+    {
+      runReadOnly: async () => {
+        if (result instanceof Error) throw result
+        return result
+      },
+    } as unknown as Database,
+    maxRows
+  )
+}
+
+function toolContext(database: Database, maxRows = 10): ToolContext {
+  return { database, contextDocument: emptyContextDocument(), log: QueryLog.disabled(), maxRows }
 }
 
 function textOf(content: { type: string; text?: string }[], index = 0): string {
@@ -25,7 +35,7 @@ describe('query tool', () => {
   it('returns rows as pretty-printed JSON', async () => {
     const database = fakeDatabase({ rows: [{ id: 1, email: 'a@b.c' }], truncated: false })
 
-    const result = await runQueryTool(database, { maxRows: 10 }, { sql: 'SELECT id, email FROM users' })
+    const result = await runQueryTool(database, { sql: 'SELECT id, email FROM users' })
 
     expect(result.isError).toBe(false)
     expect(JSON.parse(textOf(result.content))).toEqual([{ id: 1, email: 'a@b.c' }])
@@ -33,9 +43,9 @@ describe('query tool', () => {
   })
 
   it('states truncation and names the flag that raises the cap', async () => {
-    const database = fakeDatabase({ rows: [{ id: 1 }], truncated: true })
+    const database = fakeDatabase({ rows: [{ id: 1 }], truncated: true }, 1)
 
-    const result = await runQueryTool(database, { maxRows: 1 }, { sql: 'SELECT id FROM users' })
+    const result = await runQueryTool(database, { sql: 'SELECT id FROM users' })
 
     expect(result.content).toHaveLength(2)
     expect(textOf(result.content, 1)).toContain('truncated to 1 rows')
@@ -50,7 +60,7 @@ describe('query tool', () => {
       truncated: false,
     })
 
-    const result = await runQueryTool(database, { maxRows: 10 }, { sql: 'SELECT payload FROM blobs' })
+    const result = await runQueryTool(database, { sql: 'SELECT payload FROM blobs' })
 
     expect(JSON.parse(textOf(result.content))).toEqual([{ payload: '\\xdeadbeef' }])
   })
@@ -58,7 +68,7 @@ describe('query tool', () => {
   it('summarises long byte values rather than printing every byte', async () => {
     const database = fakeDatabase({ rows: [{ payload: Buffer.alloc(4096, 0xab) }], truncated: false })
 
-    const result = await runQueryTool(database, { maxRows: 10 }, { sql: 'SELECT payload FROM blobs' })
+    const result = await runQueryTool(database, { sql: 'SELECT payload FROM blobs' })
 
     expect(textOf(result.content)).toContain('(4096 bytes)')
     expect(textOf(result.content).length).toBeLessThan(200)
@@ -67,7 +77,7 @@ describe('query tool', () => {
   it('reports a rejected statement as a tool error the model can act on', async () => {
     const database = fakeDatabase({ rows: [], truncated: false })
 
-    const result = await runQueryTool(database, { maxRows: 10 }, { sql: 'DELETE FROM users' })
+    const result = await runQueryTool(database, { sql: 'DELETE FROM users' })
 
     expect(result.isError).toBe(true)
     expect(textOf(result.content)).toContain('read-only')
@@ -76,14 +86,14 @@ describe('query tool', () => {
 
   it('never reaches the database with a rejected statement', async () => {
     let reached = false
-    const database = {
+    const database = toolContext({
       runReadOnly: async () => {
         reached = true
         return { rows: [], truncated: false }
       },
-    } as unknown as Database
+    } as unknown as Database)
 
-    await runQueryTool(database, { maxRows: 10 }, { sql: 'COMMIT; DROP SCHEMA public CASCADE' })
+    await runQueryTool(database, { sql: 'COMMIT; DROP SCHEMA public CASCADE' })
 
     expect(reached).toBe(false)
   })
@@ -92,7 +102,7 @@ describe('query tool', () => {
     const database = fakeDatabase({ rows: [], truncated: false })
 
     for (const args of [undefined, {}, { sql: '' }, { sql: '   ' }, { sql: 42 }]) {
-      const result = await runQueryTool(database, { maxRows: 10 }, args as Record<string, unknown>)
+      const result = await runQueryTool(database, args as Record<string, unknown>)
       expect(result.isError).toBe(true)
     }
   })
@@ -100,7 +110,7 @@ describe('query tool', () => {
   it('surfaces database errors as tool errors', async () => {
     const database = fakeDatabase(Object.assign(new Error('relation "nope" does not exist'), { code: '42P01' }))
 
-    const result = await runQueryTool(database, { maxRows: 10 }, { sql: 'SELECT * FROM nope' })
+    const result = await runQueryTool(database, { sql: 'SELECT * FROM nope' })
 
     expect(result.isError).toBe(true)
     expect(textOf(result.content)).toContain('Object not found')
