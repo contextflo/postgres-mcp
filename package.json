@@ -13,7 +13,7 @@
     "cursor",
     "text-to-sql"
   ],
-  "homepage": "https://contextflo.com",
+  "homepage": "https://contextflo.com/postgres-mcp",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/contextflo/postgres-mcp.git"
