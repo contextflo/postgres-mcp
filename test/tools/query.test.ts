@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from 'vitest'
-import { emptyContextDocument } from '../../src/context/context-file.js'
+import { ContextStore } from '../../src/context/store.js'
 import type { Database, ReadOnlyResult } from '../../src/db/pool.js'
 import { QueryLog } from '../../src/log.js'
 import { ensureParserReady } from '../../src/safety/validate.js'
@@ -25,7 +25,7 @@ function fakeDatabase(result: ReadOnlyResult | Error, maxRows = 10, maxOutputCha
 }
 
 function toolContext(database: Database, maxRows = 10, maxOutputChars = 50_000): ToolContext {
-  return { database, contextDocument: emptyContextDocument(), log: QueryLog.disabled(), maxRows, maxOutputChars }
+  return { database, contextFile: ContextStore.inMemory(), log: QueryLog.disabled(), maxRows, maxOutputChars }
 }
 
 function textOf(content: { type: string; text?: string }[], index = 0): string {

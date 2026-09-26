@@ -1,7 +1,8 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
-import { emptyContextDocument, parseContextFile } from '../src/context/context-file.js'
+import { parseContextFile } from '../src/context/context-file.js'
+import { ContextStore } from '../src/context/store.js'
 import type { Database } from '../src/db/pool.js'
 import { QueryLog } from '../src/log.js'
 import { ensureParserReady } from '../src/safety/validate.js'
@@ -52,7 +53,7 @@ async function connect(context: Partial<ToolContext> = {}): Promise<void> {
   const server = createServer({
     context: {
       database: fakeDatabase(),
-      contextDocument: emptyContextDocument(),
+      contextFile: ContextStore.inMemory(),
       log: QueryLog.disabled(),
       maxRows: 10,
       maxOutputChars: 50_000,
@@ -141,9 +142,9 @@ describe('tools', () => {
 describe('context file', () => {
   it('serves the preamble as server instructions', async () => {
     await connect({
-      contextDocument: parseContextFile(
+      contextFile: ContextStore.inMemory(parseContextFile(
         '# Context\n\nRevenue means gross, before refunds.\n\n## Tables\n\n### public.orders\nOne row per order.\n'
-      ),
+      )),
     })
 
     expect(client.getInstructions()).toContain('Revenue means gross')
@@ -151,9 +152,9 @@ describe('context file', () => {
 
   it('prefers curated descriptions over the catalog comment', async () => {
     await connect({
-      contextDocument: parseContextFile(
+      contextFile: ContextStore.inMemory(parseContextFile(
         '## Tables\n\n### public.orders\nThe table finance actually uses.\n\n- revenue_usd — Gross, before refunds.\n'
-      ),
+      )),
     })
 
     const result = await client.callTool({
@@ -164,6 +165,18 @@ describe('context file', () => {
     const text = JSON.stringify(result.content)
     expect(text).toContain('The table finance actually uses')
     expect(text).toContain('Gross, before refunds')
+  })
+})
+
+describe('list_tables and the preamble', () => {
+  it('carries the business definitions, for clients that drop server instructions', async () => {
+    await connect({
+      contextFile: ContextStore.inMemory(parseContextFile('Revenue means gross.\n\n## Tables\n')),
+    })
+
+    const result = await client.callTool({ name: 'list_tables', arguments: {} })
+
+    expect(JSON.stringify(result.content)).toContain('Revenue means gross.')
   })
 })
 

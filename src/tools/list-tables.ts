@@ -44,17 +44,23 @@ export async function runListTablesTool(
   const schema = optionalString(args?.schema)
   const limit = Math.min(Math.max(Number(args?.limit) || DEFAULT_LIST_LIMIT, 1), MAX_LIST_LIMIT)
 
-  const result = await listTables(context.database, { pattern, schema, limit })
+  const [result, document] = await Promise.all([
+    listTables(context.database, { pattern, schema, limit }),
+    context.contextFile.refresh(),
+  ])
+  // Several clients never show the model the server's instructions, so the team's
+  // business definitions also ride along with the tool the model is told to call first.
+  const preamble = document.preamble ? `Business context from the team:\n\n${document.preamble}\n\n---\n\n` : ''
 
   if (result.tables.length === 0) {
     return {
-      content: [{ type: 'text', text: describeEmptyResult(pattern, schema) }],
+      content: [{ type: 'text', text: preamble + describeEmptyResult(pattern, schema) }],
       isError: false,
     }
   }
 
   const lines = result.tables.map((table) => {
-    const curated = notesForTable(context.contextDocument, table.fullyQualifiedName)?.description
+    const curated = notesForTable(document, table.fullyQualifiedName)?.description
     const description = preferCuratedDescription(curated, table.description)
 
     return `${table.fullyQualifiedName} — ${table.kind}${description ? ` — ${description}` : ''}`
@@ -67,7 +73,7 @@ export async function runListTablesTool(
       : `${result.tables.length} table${result.tables.length === 1 ? '' : 's'}.`
 
   return {
-    content: [{ type: 'text', text: `${header}\n\n${lines.join('\n')}` }],
+    content: [{ type: 'text', text: `${preamble}${header}\n\n${lines.join('\n')}` }],
     isError: false,
   }
 }

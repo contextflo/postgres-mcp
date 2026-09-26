@@ -82,6 +82,12 @@ describe('parseContextFile', () => {
 
     expect(notesForTable(document, 'public.orders')?.description).toBe('Real description.')
   })
+
+  it('keeps HTML comments, which are notes for the human editing the file, out of the preamble', () => {
+    const document = parseContextFile('<!-- for humans -->\n\nRevenue means gross.\n\n## Tables\n')
+
+    expect(document.preamble).toBe('Revenue means gross.')
+  })
 })
 
 describe('preferCuratedDescription', () => {

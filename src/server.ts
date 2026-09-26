@@ -28,7 +28,7 @@ export function createServer({ context, version, connectionString }: ServerDeps)
       capabilities: { tools: {}, resources: {} },
       // The curated preamble from .contextflo/context.md — business definitions, caveats,
       // which tables to prefer — handed to the model once per session.
-      ...(context.contextDocument.preamble ? { instructions: context.contextDocument.preamble } : {}),
+      ...(context.contextFile.current.preamble ? { instructions: context.contextFile.current.preamble } : {}),
     }
   )
 

@@ -199,9 +199,14 @@ One row per customer order. Source of truth for revenue — `orders_legacy` is n
 - status — One of pending, paid, refunded.
 ```
 
-Everything above `## Tables` is handed to the model verbatim as server instructions. Under `## Tables`, a `###`
-heading names a table, the prose beneath describes it, and `- column — meaning` lines describe columns. Your text
-wins over `COMMENT ON`.
+Everything above `## Tables` is handed to the model: as server instructions, and again at the top of `list_tables`,
+because several clients never show the model server instructions. HTML comments are left out. Under `## Tables`, a
+`###` heading names a table, the prose beneath describes it, and `- column — meaning` lines describe columns. Your
+text wins over `COMMENT ON`. Edits take effect on the next tool call; no restart.
+
+A relative `--context-file` resolves against the directory the client starts the server in. Claude Desktop starts
+servers in `/`, so there it falls back to your home directory (`~/.contextflo/context.md`). For a file that lives in
+a repo, pass an absolute path. The server prints the path it is using on startup.
 
 `init` seeds this from existing comments, and only for columns that already have one — a file with a blank
 placeholder for all 4000 columns is a file nobody edits.
