@@ -1,6 +1,6 @@
 import { loadModule, parseSync } from 'libpg-query'
 import { SafetyError, describeStatement } from './errors.js'
-import { findStatementNodes } from './walk.js'
+import { findFunctionNames, findStatementNodes } from './walk.js'
 
 /**
  * Layer 3 of four: the statement allowlist, enforced with the real Postgres C parser
@@ -80,6 +80,76 @@ export function validateReadOnlySql(sql: string): void {
       checkSelect(node.fields)
     }
   }
+
+  for (const name of findFunctionNames(statements[0].stmt)) {
+    if (isDeniedFunction(name)) {
+      throw new SafetyError(
+        'FUNCTION_NOT_ALLOWED',
+        `This server is read-only; ${name}() is not allowed because it can act outside the ` +
+          'read-only transaction (another connection, the filesystem, other sessions, or a lock ' +
+          'that outlives the query).'
+      )
+    }
+  }
+}
+
+/**
+ * Functions a read-only SELECT can call that escape the read-only transaction. This is
+ * defence in depth, not a boundary: user-defined and SECURITY DEFINER functions can do
+ * the same things, and only a read-only role stops those. What it does is make the common
+ * built-in escapes fail with a clear message instead of depending on the role.
+ */
+const DENIED_FUNCTIONS = new Set([
+  // Run a SQL string the parser never sees.
+  'query_to_xml',
+  'query_to_xmlschema',
+  'query_to_xml_and_xmlschema',
+  'cursor_to_xml',
+  'cursor_to_xmlschema',
+  'ts_stat',
+  // Change settings; SET is rejected, so its function form is too.
+  'set_config',
+  // Act on other sessions or the server.
+  'pg_terminate_backend',
+  'pg_cancel_backend',
+  'pg_reload_conf',
+  'pg_rotate_logfile',
+  'pg_switch_wal',
+  'pg_promote',
+  'pg_create_restore_point',
+  'pg_notify',
+  // Session-level advisory locks survive the ROLLBACK and stay on the pooled connection.
+  'pg_advisory_lock',
+  'pg_advisory_lock_shared',
+  'pg_try_advisory_lock',
+  'pg_try_advisory_lock_shared',
+  // Server filesystem.
+  'pg_read_file',
+  'pg_read_binary_file',
+  'pg_stat_file',
+  'pg_file_write',
+  'pg_file_unlink',
+  'pg_file_rename',
+  'lo_import',
+  'lo_export',
+])
+
+/** Families matched by prefix. */
+const DENIED_FUNCTION_PREFIXES = [
+  // dblink opens a new connection, which is not read-only, and runs SQL the parser never sees.
+  'dblink',
+  // Directory listings of the server's filesystem.
+  'pg_ls_',
+  // Replication slots and origins: creating, dropping, or consuming them changes server state.
+  'pg_create_logical_replication_slot',
+  'pg_create_physical_replication_slot',
+  'pg_drop_replication_slot',
+  'pg_logical_slot_',
+  'pg_replication_origin_',
+]
+
+function isDeniedFunction(name: string): boolean {
+  return DENIED_FUNCTIONS.has(name) || DENIED_FUNCTION_PREFIXES.some((prefix) => name.startsWith(prefix))
 }
 
 function checkSelect(fields: Record<string, unknown>): void {

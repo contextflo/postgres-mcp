@@ -141,3 +141,57 @@ describe('indirection', () => {
 
   it.each(indirect)('rejects %s', (sql, code) => expectRejection(sql, code))
 })
+
+describe('functions that act outside the read-only transaction', () => {
+  // The parser cannot see inside a function body, so these are named explicitly. Each
+  // one parses as a plain SELECT, which the statement allowlist alone would accept.
+  const escapes: string[] = [
+    // A second connection, which is not read-only.
+    "SELECT dblink_exec('dbname=prod', 'DROP TABLE users')",
+    "SELECT * FROM dblink('dbname=prod', 'DELETE FROM users RETURNING id') AS t(id int)",
+    "SELECT public.dblink_exec('dbname=prod', 'DROP TABLE users')",
+    // SQL strings the parser never sees.
+    "SELECT query_to_xml('SELECT dblink_exec(''x'', ''DROP TABLE users'')', true, false, '')",
+    "SELECT * FROM ts_stat('SELECT to_tsvector(body) FROM docs')",
+    // Settings; SET is rejected, so its function form is too.
+    "SELECT set_config('statement_timeout', '0', false)",
+    // Other sessions and the server.
+    'SELECT pg_terminate_backend(pid) FROM pg_stat_activity',
+    'SELECT pg_cancel_backend(pid) FROM pg_stat_activity',
+    'SELECT pg_reload_conf()',
+    "SELECT pg_notify('channel', 'payload')",
+    // A session-level lock outlives the ROLLBACK, on a pooled connection.
+    'SELECT pg_advisory_lock(42)',
+    'SELECT pg_try_advisory_lock_shared(42)',
+    // The server's filesystem.
+    "SELECT pg_read_file('/etc/passwd')",
+    "SELECT pg_catalog.pg_read_binary_file('/etc/passwd')",
+    "SELECT pg_ls_dir('.')",
+    'SELECT * FROM pg_ls_waldir()',
+    "SELECT lo_import('/etc/passwd')",
+    "SELECT lo_export(1234, '/tmp/out')",
+    // Replication slots.
+    "SELECT pg_create_logical_replication_slot('s', 'pgoutput')",
+    "SELECT * FROM pg_logical_slot_get_changes('s', NULL, NULL)",
+    // Hidden deeper in the tree.
+    "SELECT id FROM users WHERE EXISTS (SELECT pg_advisory_lock(id))",
+    "WITH x AS (SELECT pg_read_file('/etc/passwd') AS f) SELECT * FROM x",
+    "EXPLAIN ANALYZE SELECT pg_terminate_backend(1)",
+  ]
+
+  it.each(escapes)('rejects %s', (sql) => expectRejection(sql, 'FUNCTION_NOT_ALLOWED'))
+
+  const ordinary = [
+    'SELECT count(*), lower(email), now() FROM users',
+    "SELECT date_trunc('month', created_at), sum(amount) FROM orders GROUP BY 1",
+    // The transaction-scoped lock is released by the ROLLBACK, so it is harmless.
+    'SELECT pg_advisory_xact_lock(42)',
+    "SELECT current_setting('statement_timeout')",
+    "SELECT table_to_xml('users', true, false, '')",
+    'SELECT pg_size_pretty(pg_total_relation_size(oid)) FROM pg_class',
+  ]
+
+  it.each(ordinary)('allows %s', (sql) => {
+    expect(() => validateReadOnlySql(sql)).not.toThrow()
+  })
+})
