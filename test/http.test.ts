@@ -3,7 +3,7 @@ import { request as httpRequest, type Server as HttpServer } from 'node:http'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import { afterEach, beforeAll, describe, expect, it } from 'vitest'
-import { emptyContextDocument } from '../src/context/context-file.js'
+import { ContextStore } from '../src/context/store.js'
 import type { Database } from '../src/db/pool.js'
 import { startHttpServer } from '../src/http.js'
 import { QueryLog } from '../src/log.js'
@@ -27,7 +27,7 @@ async function start(authToken?: string): Promise<string> {
       createServer({
         context: {
           database: fakeDatabase(),
-          contextDocument: emptyContextDocument(),
+          contextFile: ContextStore.inMemory(),
           log: QueryLog.disabled(),
           maxRows: 10,
           maxOutputChars: 50_000,

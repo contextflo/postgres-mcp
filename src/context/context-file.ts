@@ -62,7 +62,8 @@ export function parseContextFile(raw: string): ContextDocument {
     preamble.push(lines[index]!)
     index++
   }
-  document.preamble = preamble.join('\n').trim()
+  // HTML comments are notes to the human editing the file (init writes one), not to the model.
+  document.preamble = preamble.join('\n').replace(/<!--[\s\S]*?-->/g, '').replace(/\n{3,}/g, '\n\n').trim()
 
   index++ // step past "## Tables"
 
