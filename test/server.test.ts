@@ -55,6 +55,7 @@ async function connect(context: Partial<ToolContext> = {}): Promise<void> {
       contextDocument: emptyContextDocument(),
       log: QueryLog.disabled(),
       maxRows: 10,
+      maxOutputChars: 50_000,
       ...context,
     },
     version: '0.0.0-test',

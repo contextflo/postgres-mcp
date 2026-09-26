@@ -11,6 +11,7 @@ export interface ServerConfig {
   command: 'serve' | 'init'
   connectionString: string
   maxRows: number
+  maxOutputChars: number
   statementTimeoutMs: number
   contextFile: string
   contextDirectory: string
@@ -21,6 +22,8 @@ export interface ServerConfig {
 }
 
 export const DEFAULT_MAX_ROWS = 1000
+/** About 12k tokens: room for a real answer, not enough to crowd out the conversation. */
+export const DEFAULT_MAX_OUTPUT_CHARS = 50_000
 export const DEFAULT_STATEMENT_TIMEOUT_MS = 30_000
 export const DEFAULT_HTTP_PORT = 8080
 /** Loopback by default: exposing a database to the network should take a deliberate flag. */
@@ -48,6 +51,7 @@ Commands:
 
 Options:
   --max-rows <n>            Maximum rows returned per query (default: ${DEFAULT_MAX_ROWS})
+  --max-output-chars <n>    Character budget for one query result (default: ${DEFAULT_MAX_OUTPUT_CHARS})
   --statement-timeout <ms>  Server-side statement timeout in milliseconds (default: ${DEFAULT_STATEMENT_TIMEOUT_MS})
   --context-file <path>     Curated schema context served to the model (default: ${DEFAULT_CONTEXT_FILE})
   --log-file <path>         Append a query audit log here (default: ${DEFAULT_CONTEXT_DIRECTORY}/log.md once that directory exists)
@@ -69,6 +73,7 @@ export function parseArgs(argv: string[], env: NodeJS.ProcessEnv = process.env):
   let command: ServerConfig['command'] = 'serve'
   let connectionString: string | undefined
   let maxRows = DEFAULT_MAX_ROWS
+  let maxOutputChars = DEFAULT_MAX_OUTPUT_CHARS
   let statementTimeoutMs = DEFAULT_STATEMENT_TIMEOUT_MS
   let contextFile = DEFAULT_CONTEXT_FILE
   let logFile: string | undefined
@@ -87,6 +92,9 @@ export function parseArgs(argv: string[], env: NodeJS.ProcessEnv = process.env):
         break
       case '--max-rows':
         maxRows = requirePositiveInteger(arg, argv[++index])
+        break
+      case '--max-output-chars':
+        maxOutputChars = requirePositiveInteger(arg, argv[++index])
         break
       case '--statement-timeout':
         statementTimeoutMs = requirePositiveInteger(arg, argv[++index])
@@ -137,6 +145,7 @@ export function parseArgs(argv: string[], env: NodeJS.ProcessEnv = process.env):
     command,
     connectionString,
     maxRows,
+    maxOutputChars,
     statementTimeoutMs,
     contextFile,
     contextDirectory: directoryOf(contextFile),

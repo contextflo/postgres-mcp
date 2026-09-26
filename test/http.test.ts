@@ -30,6 +30,7 @@ async function start(authToken?: string): Promise<string> {
           contextDocument: emptyContextDocument(),
           log: QueryLog.disabled(),
           maxRows: 10,
+          maxOutputChars: 50_000,
         },
         version: '0.0.0-test',
         connectionString: 'postgres://user@localhost/app',
