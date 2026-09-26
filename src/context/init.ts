@@ -2,6 +2,7 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { getTableContext, listTables, type TableContext } from '../db/introspection.js'
 import type { Database } from '../db/pool.js'
+import { CONTEXT_FILE_HEADER } from './context-file.js'
 
 /**
  * `init` — scan the schema and write a context file worth editing.
@@ -79,33 +80,8 @@ function renderContextFile(tables: TableContext[]): string {
     return lines.join('\n')
   })
 
-  return `${HEADER}\n${sections.join('\n\n')}\n`
+  return `${CONTEXT_FILE_HEADER}\n${sections.join('\n\n')}\n`
 }
-
-const HEADER = `# Database context
-
-<!--
-postgres-mcp reads this file and hands it to the model every session. It is the whole
-context layer — no database, no index, just this file.
-
-Everything above "## Tables" is passed through verbatim. Put the things your team
-argues about here: whether revenue is gross or net, what counts as an active customer,
-which table is the source of truth and which one nobody got around to dropping.
-
-Under "## Tables", a "###" heading names a table, the prose beneath it describes the
-table, and each "- column — meaning" line describes a column. Seeded from your
-database's COMMENT ON values; anything you write wins over those.
-
-Add a line for any column you like — only already-commented ones were seeded, to keep
-this file small enough that you will actually edit it.
--->
-
-## Business definitions
-
-_Replace this with the definitions a new analyst would get wrong on their first day._
-
-## Tables
-`
 
 /** The setup that makes read-only true regardless of any bug in this server. */
 export function readOnlyRoleSnippet(databaseName: string, schemas: string[]): string {
