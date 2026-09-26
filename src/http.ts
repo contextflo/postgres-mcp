@@ -69,6 +69,13 @@ async function handleRequest(
     return
   }
 
+  if (!isLoopbackRequestAllowed(request, config.host)) {
+    respondJson(response, 403, {
+      error: 'Host or Origin is not local. This server is bound to loopback and only answers local requests.',
+    })
+    return
+  }
+
   if (!isAuthorized(request, config.authToken)) {
     response.setHeader('WWW-Authenticate', 'Bearer')
     respondJson(response, 401, { error: 'Missing or invalid bearer token.' })
@@ -119,6 +126,36 @@ function respondJson(response: ServerResponse, status: number, body: unknown): v
 }
 
 const LOOPBACK = new Set(['127.0.0.1', '::1', 'localhost'])
+/** As `URL.hostname` spells them, which brackets IPv6. */
+const LOOPBACK_HOSTNAMES = new Set(['127.0.0.1', '[::1]', 'localhost'])
+
+/**
+ * DNS rebinding: a web page on evil.example re-points its own hostname at 127.0.0.1, and
+ * the browser, seeing the same origin, lets its script POST to this server. Loopback plus
+ * no token is the default setup, so that script could read the database. The Host header
+ * still says evil.example, which is how it is caught. The MCP spec requires this check.
+ *
+ * Only for loopback binds: behind 0.0.0.0 the Host is whatever the proxy in front sends,
+ * and the bearer token is the control.
+ */
+function isLoopbackRequestAllowed(request: IncomingMessage, boundHost: string): boolean {
+  if (!LOOPBACK.has(boundHost)) return true
+
+  const host = request.headers.host
+  if (!host || !LOOPBACK_HOSTNAMES.has(hostnameOf(`http://${host}`))) return false
+
+  // Browsers send Origin; local tools such as the MCP Inspector are served from localhost.
+  const origin = request.headers.origin
+  return origin === undefined || LOOPBACK_HOSTNAMES.has(hostnameOf(origin))
+}
+
+function hostnameOf(url: string): string {
+  try {
+    return new URL(url).hostname
+  } catch {
+    return ''
+  }
+}
 
 function warnAboutExposure(config: HttpConfig): void {
   if (LOOPBACK.has(config.host)) return

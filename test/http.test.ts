@@ -1,5 +1,5 @@
 import type { AddressInfo } from 'node:net'
-import type { Server as HttpServer } from 'node:http'
+import { request as httpRequest, type Server as HttpServer } from 'node:http'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import { afterEach, beforeAll, describe, expect, it } from 'vitest'
@@ -138,3 +138,49 @@ describe('bearer token', () => {
     expect(response.status).not.toBe(401)
   })
 })
+
+describe('DNS rebinding', () => {
+  // fetch() will not let a caller choose the Host header, which is the whole point of the
+  // attack, so these go through node:http directly.
+  async function postWithHeaders(base: string, headers: Record<string, string>): Promise<number> {
+    const { port } = new URL(base)
+    return new Promise((resolve, reject) => {
+      const request = httpRequest(
+        {
+          host: '127.0.0.1',
+          port,
+          path: '/mcp',
+          method: 'POST',
+          headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', ...headers },
+        },
+        (response) => {
+          response.resume()
+          resolve(response.statusCode ?? 0)
+        }
+      )
+      request.on('error', reject)
+      request.end(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} }))
+    })
+  }
+
+  it('refuses a request whose Host is not local', async () => {
+    const base = await start()
+
+    expect(await postWithHeaders(base, { host: 'evil.example:8080' })).toBe(403)
+  })
+
+  it('refuses a local Host carrying a foreign browser Origin', async () => {
+    const base = await start()
+
+    expect(await postWithHeaders(base, { host: 'localhost', origin: 'https://evil.example' })).toBe(403)
+  })
+
+  it('allows local tools such as the MCP Inspector', async () => {
+    const base = await start()
+
+    const status = await postWithHeaders(base, { host: 'localhost', origin: 'http://localhost:6274' })
+
+    expect(status).not.toBe(403)
+  })
+})
+
