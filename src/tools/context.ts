@@ -8,4 +8,6 @@ export interface ToolContext {
   contextDocument: ContextDocument
   log: QueryLog
   maxRows: number
+  /** Character budget for one query result, so a wide result cannot flood the model's context. */
+  maxOutputChars: number
 }

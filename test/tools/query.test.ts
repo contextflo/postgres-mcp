@@ -11,7 +11,7 @@ beforeAll(async () => {
 })
 
 /** Stands in for a live database so the tool's own behavior can be tested without one. */
-function fakeDatabase(result: ReadOnlyResult | Error, maxRows = 10): ToolContext {
+function fakeDatabase(result: ReadOnlyResult | Error, maxRows = 10, maxOutputChars = 50_000): ToolContext {
   return toolContext(
     {
       runReadOnly: async () => {
@@ -19,12 +19,13 @@ function fakeDatabase(result: ReadOnlyResult | Error, maxRows = 10): ToolContext
         return result
       },
     } as unknown as Database,
-    maxRows
+    maxRows,
+    maxOutputChars
   )
 }
 
-function toolContext(database: Database, maxRows = 10): ToolContext {
-  return { database, contextDocument: emptyContextDocument(), log: QueryLog.disabled(), maxRows }
+function toolContext(database: Database, maxRows = 10, maxOutputChars = 50_000): ToolContext {
+  return { database, contextDocument: emptyContextDocument(), log: QueryLog.disabled(), maxRows, maxOutputChars }
 }
 
 function textOf(content: { type: string; text?: string }[], index = 0): string {
@@ -32,7 +33,7 @@ function textOf(content: { type: string; text?: string }[], index = 0): string {
 }
 
 describe('query tool', () => {
-  it('returns rows as pretty-printed JSON', async () => {
+  it('returns rows as JSON, one row per line', async () => {
     const database = fakeDatabase({ rows: [{ id: 1, email: 'a@b.c' }], truncated: false })
 
     const result = await runQueryTool(database, { sql: 'SELECT id, email FROM users' })
@@ -114,5 +115,50 @@ describe('query tool', () => {
 
     expect(result.isError).toBe(true)
     expect(textOf(result.content)).toContain('Object not found')
+  })
+
+  it('stops adding rows at the character budget and says so', async () => {
+    const rows = Array.from({ length: 100 }, (_, id) => ({ id, body: 'x'.repeat(100) }))
+    const database = fakeDatabase({ rows, truncated: false }, 1000, 1_000)
+
+    const result = await runQueryTool(database, { sql: 'SELECT id, body FROM notes' })
+
+    const shown = JSON.parse(textOf(result.content)) as unknown[]
+    expect(shown.length).toBeGreaterThan(0)
+    expect(shown.length).toBeLessThan(100)
+    expect(textOf(result.content).length).toBeLessThanOrEqual(1_000)
+    expect(textOf(result.content, 1)).toContain(`${shown.length} of 100 rows`)
+    expect(textOf(result.content, 1)).toContain('--max-output-chars')
+  })
+
+  it('always shows at least one row, even when it alone is over budget', async () => {
+    const database = fakeDatabase({ rows: [{ body: 'x'.repeat(1_500) }], truncated: false }, 10, 100)
+
+    const result = await runQueryTool(database, { sql: 'SELECT body FROM notes' })
+
+    expect(JSON.parse(textOf(result.content))).toHaveLength(1)
+  })
+
+  it('shortens one huge value instead of letting it take the whole budget', async () => {
+    const database = fakeDatabase({
+      rows: [{ id: 1, doc: { items: Array.from({ length: 2_000 }, (_, index) => index) }, text: 'y'.repeat(5_000) }],
+      truncated: false,
+    })
+
+    const result = await runQueryTool(database, { sql: 'SELECT * FROM docs' })
+
+    const [row] = JSON.parse(textOf(result.content)) as { id: number; doc: string; text: string }[]
+    expect(row?.id).toBe(1)
+    expect(row?.doc).toMatch(/… \([\d,]+ chars\)$/)
+    expect(row?.text).toContain('(5,000 chars)')
+    expect(textOf(result.content, 1)).toContain('were shortened')
+  })
+
+  it('keeps small jsonb values structured', async () => {
+    const database = fakeDatabase({ rows: [{ meta: { plan: 'pro', seats: 3 } }], truncated: false })
+
+    const result = await runQueryTool(database, { sql: 'SELECT meta FROM accounts' })
+
+    expect(JSON.parse(textOf(result.content))).toEqual([{ meta: { plan: 'pro', seats: 3 } }])
   })
 })
