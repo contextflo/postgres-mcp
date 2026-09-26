@@ -1,8 +1,29 @@
 {
   "name": "@contextflo/postgres-mcp",
-  "version": "0.0.0",
-  "description": "The analytics MCP server for Postgres — read-only by construction, with schema context that makes answers correct.",
+  "version": "0.1.0",
+  "description": "Read-only Postgres MCP server: a drop-in replacement for the archived @modelcontextprotocol/server-postgres, with schema context for correct answers.",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "postgres",
+    "postgresql",
+    "mcp-server",
+    "read-only",
+    "claude",
+    "cursor",
+    "text-to-sql"
+  ],
+  "homepage": "https://github.com/contextflo/postgres-mcp#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/contextflo/postgres-mcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/contextflo/postgres-mcp/issues"
+  },
+  "author": "ContextFlo (https://contextflo.com)",
   "license": "MIT",
+  "mcpName": "io.github.contextflo/postgres-mcp",
   "type": "module",
   "engines": {
     "node": ">=20"
@@ -18,7 +39,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "db:up": "docker compose -f docker-compose.test.yml up -d --wait",
-    "db:down": "docker compose -f docker-compose.test.yml down -v"
+    "db:down": "docker compose -f docker-compose.test.yml down -v",
+    "prepublishOnly": "npm run build && npm test"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",

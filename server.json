@@ -1,0 +1,30 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-09-29/server.schema.json",
+  "name": "io.github.contextflo/postgres-mcp",
+  "title": "Postgres (read-only)",
+  "description": "Read-only Postgres: drop-in for the archived server-postgres, with schema context.",
+  "repository": {
+    "url": "https://github.com/contextflo/postgres-mcp",
+    "source": "github"
+  },
+  "version": "0.1.0",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "@contextflo/postgres-mcp",
+      "version": "0.1.0",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "DATABASE_URL",
+          "description": "Postgres connection string. Use a read-only role.",
+          "isRequired": true,
+          "isSecret": true,
+          "format": "string"
+        }
+      ]
+    }
+  ]
+}

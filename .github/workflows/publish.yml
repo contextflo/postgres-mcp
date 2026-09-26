@@ -1,6 +1,10 @@
 name: Publish
 
 # Tag a release to publish: git tag v0.1.0 && git push --tags
+#
+# npm: trusted publishing (OIDC), so there is no long-lived npm token to leak. One-time
+# setup after the first manual publish: npmjs.com → the package → Settings → Trusted
+# publishing → GitHub Actions, repository contextflo/postgres-mcp, workflow publish.yml.
 on:
   push:
     tags: ['v*']
@@ -43,18 +47,43 @@ jobs:
         env:
           TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
 
-      - name: Check the tag matches package.json
+      - name: Check the tag matches package.json and server.json
         run: |
           tag="${GITHUB_REF_NAME#v}"
-          pkg="$(node -p 'require("./package.json").version')"
-          if [ "$tag" != "$pkg" ]; then
-            echo "Tag $tag does not match package.json version $pkg" >&2
-            exit 1
-          fi
+          for version in \
+            "$(node -p 'require("./package.json").version')" \
+            "$(node -p 'require("./server.json").version')" \
+            "$(node -p 'require("./server.json").packages[0].version')"; do
+            if [ "$tag" != "$version" ]; then
+              echo "Tag $tag does not match version $version in package.json/server.json" >&2
+              exit 1
+            fi
+          done
 
+      # Trusted publishing needs npm 11.5.1 or later; Node 22 ships npm 10.
+      - run: npm install -g npm@latest
       - run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  # Lists the release on the official MCP registry (registry.modelcontextprotocol.io),
+  # which clients and directories read from. The io.github.contextflo/ namespace is
+  # authorised by this workflow's GitHub OIDC token.
+  mcp-registry:
+    runs-on: ubuntu-latest
+    needs: npm
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install mcp-publisher
+        run: |
+          curl -fsSL "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_linux_amd64.tar.gz" \
+            | tar xz mcp-publisher
+
+      - run: ./mcp-publisher login github-oidc
+      - run: ./mcp-publisher publish
 
   docker:
     runs-on: ubuntu-latest
