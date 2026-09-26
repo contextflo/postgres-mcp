@@ -6,6 +6,7 @@ import {
   ReadResourceRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js'
 import { getTableContext, listTables } from './db/introspection.js'
+import { ADD_TABLE_CONTEXT_TOOL, runAddTableContextTool } from './tools/add-table-context.js'
 import { GET_TABLE_CONTEXT_TOOL, runGetTableContextTool } from './tools/get-table-context.js'
 import { LIST_TABLES_TOOL, runListTablesTool } from './tools/list-tables.js'
 import { QUERY_TOOL, runQueryTool } from './tools/query.js'
@@ -33,7 +34,12 @@ export function createServer({ context, version, connectionString }: ServerDeps)
   )
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: [QUERY_TOOL, LIST_TABLES_TOOL, GET_TABLE_CONTEXT_TOOL],
+    tools: [
+      QUERY_TOOL,
+      LIST_TABLES_TOOL,
+      GET_TABLE_CONTEXT_TOOL,
+      ...(context.contextFile.writable ? [ADD_TABLE_CONTEXT_TOOL] : []),
+    ],
   }))
 
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
@@ -46,6 +52,9 @@ export function createServer({ context, version, connectionString }: ServerDeps)
         return runListTablesTool(context, args)
       case GET_TABLE_CONTEXT_TOOL.name:
         return runGetTableContextTool(context, args)
+      case ADD_TABLE_CONTEXT_TOOL.name:
+        if (!context.contextFile.writable) throw new Error(`Unknown tool: ${request.params.name}`)
+        return runAddTableContextTool(context, args)
       default:
         throw new Error(`Unknown tool: ${request.params.name}`)
     }

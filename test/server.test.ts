@@ -1,3 +1,6 @@
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
@@ -177,6 +180,100 @@ describe('list_tables and the preamble', () => {
     const result = await client.callTool({ name: 'list_tables', arguments: {} })
 
     expect(JSON.stringify(result.content)).toContain('Revenue means gross.')
+  })
+})
+
+describe('add_table_context', () => {
+  let directory: string
+  let contextPath: string
+
+  beforeEach(async () => {
+    directory = await mkdtemp(join(tmpdir(), 'postgres-mcp-server-'))
+    contextPath = join(directory, 'context.md')
+  })
+
+  afterEach(async () => {
+    await rm(directory, { recursive: true, force: true })
+  })
+
+  async function connectWritable(catalogRows = CATALOG_ROWS): Promise<void> {
+    await connect({
+      database: { ...fakeDatabase(), internalQuery: async () => catalogRows } as unknown as Database,
+      contextFile: await ContextStore.open(contextPath, { writable: true }),
+    })
+  }
+
+  function textOf(result: Awaited<ReturnType<Client['callTool']>>): string {
+    return JSON.stringify(result.content)
+  }
+
+  it('is offered only when context writes are on', async () => {
+    await connectWritable()
+    const { tools } = await client.listTools()
+    expect(tools.map((tool) => tool.name)).toContain('add_table_context')
+
+    await client.close()
+    await connect()
+    await expect(
+      client.callTool({ name: 'add_table_context', arguments: { table: 'orders', note: 'x' } })
+    ).rejects.toThrow(/Unknown tool/)
+  })
+
+  it('writes a note that get_table_context serves from then on', async () => {
+    await connectWritable()
+
+    const added = await client.callTool({
+      name: 'add_table_context',
+      arguments: { table: 'orders', note: 'Excludes test orders.', columns: { REVENUE_USD: 'In cents.' } },
+    })
+
+    expect(added.isError).toBe(false)
+    // Resolved to the qualified name and the column's real spelling.
+    const file = await readFile(contextPath, 'utf8')
+    expect(file).toContain('### public.orders')
+    expect(file).toContain('- revenue_usd — In cents.')
+
+    const described = await client.callTool({ name: 'get_table_context', arguments: { tables: ['public.orders'] } })
+    expect(textOf(described)).toContain('Excludes test orders.')
+    expect(textOf(described)).toContain('In cents.')
+  })
+
+  it('refuses a table that does not exist, so a guess cannot become a heading', async () => {
+    await connectWritable([])
+
+    const result = await client.callTool({ name: 'add_table_context', arguments: { table: 'ordrs', note: 'x' } })
+
+    expect(result.isError).toBe(true)
+    expect(textOf(result)).toContain('list_tables')
+  })
+
+  it('refuses a column the table does not have', async () => {
+    await connectWritable()
+
+    const result = await client.callTool({
+      name: 'add_table_context',
+      arguments: { table: 'public.orders', columns: { revenue: 'x' } },
+    })
+
+    expect(result.isError).toBe(true)
+    expect(textOf(result)).toContain('no column revenue')
+  })
+
+  it('asks for a qualified name when the bare one is ambiguous', async () => {
+    await connectWritable([...CATALOG_ROWS, { ...CATALOG_ROWS[0]!, schema: 'archive' }])
+
+    const result = await client.callTool({ name: 'add_table_context', arguments: { table: 'orders', note: 'x' } })
+
+    expect(result.isError).toBe(true)
+    expect(textOf(result)).toContain('archive.orders')
+  })
+
+  it('requires something to add', async () => {
+    await connectWritable()
+
+    const result = await client.callTool({ name: 'add_table_context', arguments: { table: 'public.orders' } })
+
+    expect(result.isError).toBe(true)
   })
 })
 

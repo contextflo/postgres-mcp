@@ -17,6 +17,8 @@ export interface ServerConfig {
   statementTimeoutMs: number
   /** Absolute. */
   contextFile: string
+  /** Whether the add_table_context tool is offered. */
+  contextWrites: boolean
   contextDirectory: string
   logFile: string | undefined
   logDisabled: boolean
@@ -57,6 +59,7 @@ Options:
   --max-output-chars <n>    Character budget for one query result (default: ${DEFAULT_MAX_OUTPUT_CHARS})
   --statement-timeout <ms>  Server-side statement timeout in milliseconds (default: ${DEFAULT_STATEMENT_TIMEOUT_MS})
   --context-file <path>     Curated schema context served to the model (default: ${DEFAULT_CONTEXT_FILE})
+  --no-context-writes       Do not offer add_table_context; the context file is only read
   --log-file <path>         Append a query audit log here (default: ${DEFAULT_CONTEXT_DIRECTORY}/log.md once that directory exists)
   --no-log                  Never write a query log
   --http                    Serve over streamable HTTP instead of stdio
@@ -81,6 +84,7 @@ export function parseArgs(
   let connectionString: string | undefined
   let maxRows = DEFAULT_MAX_ROWS
   let maxOutputChars = DEFAULT_MAX_OUTPUT_CHARS
+  let contextWrites = true
   let statementTimeoutMs = DEFAULT_STATEMENT_TIMEOUT_MS
   let contextFile = DEFAULT_CONTEXT_FILE
   let logFile: string | undefined
@@ -102,6 +106,9 @@ export function parseArgs(
         break
       case '--max-output-chars':
         maxOutputChars = requirePositiveInteger(arg, argv[++index])
+        break
+      case '--no-context-writes':
+        contextWrites = false
         break
       case '--statement-timeout':
         statementTimeoutMs = requirePositiveInteger(arg, argv[++index])
@@ -157,6 +164,7 @@ export function parseArgs(
     maxOutputChars,
     statementTimeoutMs,
     contextFile: resolvedContextFile,
+    contextWrites,
     contextDirectory: dirname(resolvedContextFile),
     logFile,
     logDisabled,

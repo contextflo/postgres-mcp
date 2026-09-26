@@ -114,6 +114,11 @@ describe('parseArgs', () => {
     expect(config.maxOutputChars).toBe(1000)
   })
 
+  it('offers context writes unless --no-context-writes', () => {
+    expect(parseArgs(['postgres://localhost/app']).contextWrites).toBe(true)
+    expect(parseArgs(['postgres://localhost/app', '--no-context-writes']).contextWrites).toBe(false)
+  })
+
   it('rejects contradictory logging flags', () => {
     expect(() => parseArgs(['postgres://localhost/app', '--log-file', 'a.md', '--no-log'])).toThrow(
       ConfigError

@@ -80,6 +80,7 @@ a read-only role. Editing the file is the point — the business definitions sec
 | `query` | Runs one read-only statement: `SELECT`, `WITH ... SELECT`, `EXPLAIN`, or `SHOW`. |
 | `list_tables` | Lists readable tables with descriptions. `pattern` matches anywhere in the name or description. |
 | `get_table_context` | Describes tables: columns, types, keys, foreign key targets, curated descriptions. |
+| `add_table_context` | Lets the agent write down a gotcha it found — `amount` is in cents, `status` has an undocumented value — in the context file. |
 
 There is no separate search tool, and that is deliberate. `information_schema` and `pg_catalog` are ordinary tables,
 so anything more specific — find every column named like `%revenue%`, list tables with no primary key — is a query
@@ -167,6 +168,7 @@ Four deliberate differences:
 --max-output-chars <n>    Character budget for one query result (default: 50000)
 --statement-timeout <ms>  Server-side statement timeout (default: 30000)
 --context-file <path>     Curated schema context (default: .contextflo/context.md)
+--no-context-writes       Do not offer add_table_context; the context file is only read
 --log-file <path>         Query audit log (default: .contextflo/log.md once that directory exists)
 --no-log                  Never write a query log
 --http                    Serve over streamable HTTP instead of stdio
@@ -207,6 +209,13 @@ text wins over `COMMENT ON`. Edits take effect on the next tool call; no restart
 A relative `--context-file` resolves against the directory the client starts the server in. Claude Desktop starts
 servers in `/`, so there it falls back to your home directory (`~/.contextflo/context.md`). For a file that lives in
 a repo, pass an absolute path. The server prints the path it is using on startup.
+
+**The agent adds to it.** When the model finds something the schema does not say — `amount` is in cents, `status`
+also holds `'void'` on old rows, every query needs `deleted_at IS NULL` — `add_table_context` appends it to this file,
+and every later session starts knowing it. Notes are only ever appended, never substituted for what you wrote, and
+only for tables and columns that exist. Treat them like any other change: keep the file in git and read the diff. A
+model can be wrong, and text inside your data can steer what it writes, so a note is a suggestion until someone has
+looked at it. `--no-context-writes` turns the tool off.
 
 `init` seeds this from existing comments, and only for columns that already have one — a file with a blank
 placeholder for all 4000 columns is a file nobody edits.
