@@ -93,6 +93,12 @@ describe('parseArgs', () => {
     expect(config.contextDirectory).toBe('docs/db')
   })
 
+  it('reads the output budget', () => {
+    const config = parseArgs(['postgres://localhost/app', '--max-output-chars', '1000'])
+
+    expect(config.maxOutputChars).toBe(1000)
+  })
+
   it('rejects contradictory logging flags', () => {
     expect(() => parseArgs(['postgres://localhost/app', '--log-file', 'a.md', '--no-log'])).toThrow(
       ConfigError

@@ -151,8 +151,10 @@ Four deliberate differences:
 
 1. **Multi-statement SQL and `SET`/`RESET` are rejected** with a clear error. On the archived server these "worked" —
    that was the vulnerability.
-2. **Results are capped** at 1000 rows by default. Truncation is stated in the output, never silent. Raise it with
-   `--max-rows`.
+2. **Results are capped** at 1000 rows and 50,000 characters by default, and single values over 2,000 characters are
+   shortened. Truncation is stated in the output, never silent. Rows come back one per line rather than
+   pretty-printed, which roughly halves their token cost; it is still a JSON array. Dates and timestamps are exactly
+   what Postgres sent, not re-rendered in the server's timezone.
 3. **Schema discovery is a tool, not just a resource.** Most clients do not auto-attach resources, which is why
    models using the old server so often did not know the schema.
 4. **All non-system schemas are visible**, not only `public`, and column descriptions come through from
@@ -162,6 +164,7 @@ Four deliberate differences:
 
 ```
 --max-rows <n>            Maximum rows returned per query (default: 1000)
+--max-output-chars <n>    Character budget for one query result (default: 50000)
 --statement-timeout <ms>  Server-side statement timeout (default: 30000)
 --context-file <path>     Curated schema context (default: .contextflo/context.md)
 --log-file <path>         Query audit log (default: .contextflo/log.md once that directory exists)

@@ -108,7 +108,13 @@ async function serve(database: Database, config: ServerConfig): Promise<void> {
     console.error(`[postgres-mcp] logging queries to ${log.filePath}`)
   }
 
-  const toolContext = { database, contextDocument, log, maxRows: config.maxRows }
+  const toolContext = {
+    database,
+    contextDocument,
+    log,
+    maxRows: config.maxRows,
+    maxOutputChars: config.maxOutputChars,
+  }
   const buildServer = (): ReturnType<typeof createServer> =>
     createServer({ context: toolContext, version, connectionString: config.connectionString })
 
