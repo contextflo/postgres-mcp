@@ -26,11 +26,15 @@ import { describeConnectionError } from './errors.js'
  *
  * `default_transaction_read_only=on` is set in the startup packet, and every statement
  * additionally runs inside an explicit `BEGIN READ ONLY`. The explicit transaction is
- * what makes this layer hold even when a pooler strips startup options. `SET`/`RESET`
- * are rejected by the parser layer, so a session cannot turn either back off.
+ * what makes this layer hold behind a pooler: PgBouncer refuses unknown startup
+ * parameters outright, so on that error we reconnect without them rather than fail. The
+ * statement timeout is set with `SET LOCAL` inside each transaction for the same reason.
+ * `SET`/`RESET` are rejected by the parser layer, so a session cannot turn either back off.
  */
 
 const DEFAULT_IDLE_TRANSACTION_TIMEOUT_MS = 60_000
+/** Client-side backstop in case the server never answers; the server-side timeout fires first. */
+const CLIENT_TIMEOUT_GRACE_MS = 5_000
 
 // node-postgres turns date and timestamp values into JS Dates in the *MCP process's*
 // timezone, and JSON renders those in UTC — so `2024-01-15` came out as
@@ -56,13 +60,38 @@ export interface ReadOnlyResult {
 
 export class Database {
   private readonly pool: pg.Pool
+  private readonly statementTimeoutMs: number
+  /** True when startup options were refused and we connected without them. */
+  readonly behindPooler: boolean
 
-  private constructor(pool: pg.Pool) {
+  private constructor(pool: pg.Pool, statementTimeoutMs: number, behindPooler: boolean) {
     this.pool = pool
+    this.statementTimeoutMs = statementTimeoutMs
+    this.behindPooler = behindPooler
   }
 
   static async connect(options: DatabaseOptions): Promise<Database> {
-    const pool = new pg.Pool(buildPoolConfig(options))
+    try {
+      return await Database.open(options, true)
+    } catch (error) {
+      if (!isUnsupportedStartupParameter(error)) throw new Error(describeConnectionError(error))
+    }
+
+    console.error(
+      '[postgres-mcp] the server refused startup parameters, which usually means PgBouncer or another ' +
+        'pooler. Reconnecting without them: every statement still runs in BEGIN READ ONLY with its ' +
+        'own statement timeout.'
+    )
+
+    try {
+      return await Database.open(options, false)
+    } catch (error) {
+      throw new Error(describeConnectionError(error))
+    }
+  }
+
+  private static async open(options: DatabaseOptions, withStartupOptions: boolean): Promise<Database> {
+    const pool = new pg.Pool(buildPoolConfig(options, withStartupOptions))
 
     // pg emits 'error' asynchronously when an idle connection is reaped server-side.
     // Without a listener node re-throws it as an uncaught exception and kills the server.
@@ -75,10 +104,10 @@ export class Database {
       client.release()
     } catch (error) {
       await pool.end().catch(() => {})
-      throw new Error(describeConnectionError(error))
+      throw error
     }
 
-    return new Database(pool)
+    return new Database(pool, options.statementTimeoutMs, !withStartupOptions)
   }
 
   /**
@@ -91,6 +120,12 @@ export class Database {
 
     try {
       await client.query({ text: 'BEGIN READ ONLY', queryMode: 'extended' })
+      // SET LOCAL rather than a startup option, so the timeout holds behind a pooler too.
+      await client.query({
+        text: "SELECT set_config('statement_timeout', $1, true)",
+        values: [String(this.statementTimeoutMs)],
+        queryMode: 'extended',
+      })
 
       const cursor = client.query(new Cursor(sql))
       try {
@@ -153,10 +188,10 @@ export class Database {
         )
       }
 
-      if (info.default_read_only !== 'on') {
+      if (info.default_read_only !== 'on' && !this.behindPooler) {
         console.error(
           '[postgres-mcp] default_transaction_read_only did not take effect on this connection ' +
-            '(a connection pooler may be stripping startup options). Statements still run inside an ' +
+            '(a connection pooler may be dropping startup options). Statements still run inside an ' +
             'explicit READ ONLY transaction, so writes remain blocked.'
         )
       }
@@ -172,7 +207,12 @@ export class Database {
   }
 }
 
-function buildPoolConfig(options: DatabaseOptions): pg.PoolConfig {
+/** PgBouncer: `unsupported startup parameter: options` (or `...in options: ...`). */
+function isUnsupportedStartupParameter(error: unknown): boolean {
+  return /unsupported startup parameter/i.test((error as { message?: string })?.message ?? '')
+}
+
+function buildPoolConfig(options: DatabaseOptions, withStartupOptions: boolean): pg.PoolConfig {
   // Parse here rather than handing `connectionString` to pg: pg re-parses it and
   // Object.assigns the result over the rest of the config, which would drop our options.
   const parsed = parseConnectionString(options.connectionString)
@@ -184,12 +224,18 @@ function buildPoolConfig(options: DatabaseOptions): pg.PoolConfig {
   ].join(' ')
 
   const config: pg.PoolConfig = {
-    // Keep anything the user set (including their own `options`) and append ours last so
-    // the read-only settings win.
-    options: parsed.options ? `${parsed.options} ${hardening}` : hardening,
     max: 5,
     idleTimeoutMillis: 30_000,
-    statement_timeout: options.statementTimeoutMs,
+    // Client-side only — never sent as a startup parameter, so safe behind a pooler.
+    query_timeout: options.statementTimeoutMs + CLIENT_TIMEOUT_GRACE_MS,
+  }
+
+  if (withStartupOptions) {
+    // Keep anything the user set (including their own `options`) and append ours last so
+    // the read-only settings win.
+    config.options = parsed.options ? `${parsed.options} ${hardening}` : hardening
+  } else if (parsed.options) {
+    config.options = parsed.options
   }
 
   if (parsed.host) config.host = parsed.host
