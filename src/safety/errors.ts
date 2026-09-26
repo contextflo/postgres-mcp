@@ -9,6 +9,7 @@ export type SafetyCode =
   | 'STATEMENT_NOT_ALLOWED'
   | 'SELECT_INTO'
   | 'LOCKING_CLAUSE'
+  | 'FUNCTION_NOT_ALLOWED'
 
 export class SafetyError extends Error {
   readonly code: SafetyCode

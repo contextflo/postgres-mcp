@@ -119,6 +119,10 @@ WITH x AS (INSERT INTO users VALUES (1) RETURNING *) SELECT * FROM x
 
 That parses as a `SelectStmt`. A validator checking only the statement type runs it. Unknown node types fail closed.
 
+The same walk rejects built-in functions that act outside the transaction even inside a plain `SELECT`:
+`dblink` (a second connection, which is not read-only), `query_to_xml` (runs a SQL string the parser never sees),
+`pg_terminate_backend`, session-level advisory locks, `set_config`, and the server-filesystem functions.
+
 **4. A read-only database role.** The layers above are code, and code has bugs. A role that cannot write is enforced
 by Postgres regardless. `init` prints the snippet; this is the setup we recommend:
 
@@ -132,9 +136,10 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO mcp_readonly
 
 The server warns on startup if you connect as a superuser.
 
-**What this does not protect against.** The parser cannot see through a volatile or `SECURITY DEFINER` function
-called from an allowed `SELECT`. Layers 2 and 4 are what stop that, which is why the read-only role is the
-recommended setup rather than an optional extra. Read-only is also not confidentiality: anything the connected role
+**What this does not protect against.** The parser cannot see inside a user-defined function, so a volatile or
+`SECURITY DEFINER` function called from an allowed `SELECT` can do anything its body does — including open its own
+connection. The function denylist covers the built-in escapes, not yours. Layer 4 is what stops the rest, which is
+why the read-only role is the recommended setup rather than an optional extra. Read-only is also not confidentiality: anything the connected role
 can read, a model can read, so grant it only what you want an agent to see.
 
 ## Migrating from `@modelcontextprotocol/server-postgres`

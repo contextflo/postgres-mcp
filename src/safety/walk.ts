@@ -45,3 +45,26 @@ export function* findStatementNodes(node: unknown): Generator<StatementNode> {
     yield* findStatementNodes(value)
   }
 }
+
+/**
+ * Yields the lower-cased, unqualified name of every function call anywhere in the tree —
+ * in the select list, FROM (`dblink(...) AS t`), WHERE, subqueries, CTEs. The schema
+ * qualifier is dropped so `pg_catalog.pg_read_file` and `pg_read_file` look the same.
+ */
+export function* findFunctionNames(node: unknown): Generator<string> {
+  if (Array.isArray(node)) {
+    for (const item of node) yield* findFunctionNames(item)
+    return
+  }
+
+  if (!isRecord(node)) return
+
+  for (const [key, value] of Object.entries(node)) {
+    if (key === 'FuncCall' && isRecord(value) && Array.isArray(value.funcname)) {
+      const last = value.funcname[value.funcname.length - 1] as { String?: { sval?: unknown } } | undefined
+      const name = last?.String?.sval
+      if (typeof name === 'string') yield name.toLowerCase()
+    }
+    yield* findFunctionNames(value)
+  }
+}
