@@ -45,6 +45,8 @@ export interface ColumnContext {
   isPrimaryKey: boolean
   /** `schema.table.column` this column references, when it is a foreign key. */
   references: string | null
+  /** Labels in sort order, when the column's type is an enum. */
+  enumValues: string[] | null
 }
 
 export interface TableContext {
@@ -95,27 +97,29 @@ export async function listTables(
      WHERE c.relkind IN ${RELATION_KINDS}
        AND ${VISIBLE_SCHEMAS}
        AND has_table_privilege(c.oid, 'SELECT')
+       -- A table partitioned by day has hundreds of children; the parent is the one to query.
+       AND NOT c.relispartition
        AND ($2::text IS NULL OR n.nspname = $2)
        AND (
          $1::text IS NULL
-         OR c.relname ILIKE '%' || $1 || '%'
-         OR (n.nspname || '.' || c.relname) ILIKE '%' || $1 || '%'
-         OR obj_description(c.oid, 'pg_class') ILIKE '%' || $1 || '%'
+         OR c.relname ILIKE '%' || $4::text || '%'
+         OR (n.nspname || '.' || c.relname) ILIKE '%' || $4::text || '%'
+         OR obj_description(c.oid, 'pg_class') ILIKE '%' || $4::text || '%'
        )
      ORDER BY
        CASE
          WHEN $1::text IS NULL THEN 0
          WHEN lower(n.nspname || '.' || c.relname) = lower($1) THEN 0
          WHEN lower(c.relname) = lower($1) THEN 1
-         WHEN c.relname ILIKE $1 || '%' THEN 2
-         WHEN c.relname ILIKE '%' || $1 || '%' THEN 3
+         WHEN c.relname ILIKE $4::text || '%' THEN 2
+         WHEN c.relname ILIKE '%' || $4::text || '%' THEN 3
          ELSE 4
        END,
        n.nspname,
        c.relname
      LIMIT $3
     `,
-    [pattern, schema, options.limit]
+    [pattern, schema, options.limit, pattern === null ? null : escapeLike(pattern)]
   )
 
   return {
@@ -128,6 +132,11 @@ export async function listTables(
     })),
     totalMatches: rows.length > 0 ? Number(rows[0]!.total_matches) : 0,
   }
+}
+
+/** `order_items` should match that name, not every table with "order" + any char + "items". */
+function escapeLike(pattern: string): string {
+  return pattern.replace(/[\\%_]/g, (character) => `\\${character}`)
 }
 
 /**
@@ -158,6 +167,7 @@ export async function getTableContext(
     column_description: string | null
     is_primary_key: boolean | null
     references: string | null
+    enum_values: string[] | null
     ordinal: number | null
   }>(
     `
@@ -194,6 +204,11 @@ export async function getTableContext(
                 AND a.attnum = ANY (con.conkey)
               LIMIT 1
            ) AS references,
+           (
+             SELECT array_agg(e.enumlabel::text ORDER BY e.enumsortorder)
+               FROM pg_enum e
+              WHERE e.enumtypid = a.atttypid
+           ) AS enum_values,
            a.attnum AS ordinal
       FROM pg_class c
       JOIN pg_namespace n ON n.oid = c.relnamespace
@@ -238,6 +253,7 @@ export async function getTableContext(
         description: row.column_description,
         isPrimaryKey: row.is_primary_key ?? false,
         references: row.references,
+        enumValues: row.enum_values,
       })
     }
   }

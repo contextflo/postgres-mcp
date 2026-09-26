@@ -1,4 +1,5 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
+import { parse as parseConnectionString } from 'pg-connection-string'
 import {
   CallToolRequestSchema,
   ListResourcesRequestSchema,
@@ -118,12 +119,26 @@ function registerResources(server: Server, context: ToolContext, connectionStrin
   })
 }
 
+/**
+ * `postgres://user@host:port/database/`, built from the parsed pieces rather than
+ * `new URL(connectionString)`, which throws on `host=... dbname=...` strings and socket
+ * paths. The password is never included.
+ */
 function buildResourceBaseUrl(connectionString: string): URL {
-  const url = new URL(connectionString)
-  url.protocol = 'postgres:'
-  url.password = ''
-  // A trailing slash keeps `new URL(path, base)` from eating the last path segment.
-  if (!url.pathname.endsWith('/')) url.pathname += '/'
+  const { host, port, database, user } = parseConnectionString(connectionString)
+
+  let url: URL
+  try {
+    // A socket directory is not a hostname; the URI only needs to be stable, not dialable.
+    url = new URL(`postgres://${host && !host.startsWith('/') ? host : 'localhost'}${port ? `:${port}` : ''}/`)
+  } catch {
+    url = new URL('postgres://localhost/')
+  }
+
+  if (user) url.username = encodeURIComponent(user)
+  // Always a database segment, so parseResourceUri can tell it from a schema. The
+  // trailing slash keeps `new URL(path, base)` from eating the last path segment.
+  url.pathname = `/${encodeURIComponent(database || 'postgres')}/`
   return url
 }
 
@@ -148,5 +163,5 @@ function parseResourceUri(uri: string): { schema: string; table: string } {
   // archived server's parsing, which only ever looked at the last two segments.
   const schema = parts.length > 1 ? parts[parts.length - 1]! : 'public'
 
-  return { schema, table }
+  return { schema: decodeURIComponent(schema), table: decodeURIComponent(table) }
 }

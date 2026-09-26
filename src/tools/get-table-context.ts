@@ -91,11 +91,21 @@ function renderColumn(column: ColumnContext, curated: string | undefined): strin
   else if (!column.isNullable) facts.push('not null')
 
   if (column.references) facts.push(`→ ${column.references}`)
+  if (column.enumValues?.length) facts.push(formatEnumValues(column.enumValues))
   if (column.defaultValue) facts.push(`default ${column.defaultValue}`)
 
   const description = preferCuratedDescription(curated, column.description)
 
   return `- ${column.name} — ${facts.join(', ')}${description ? ` — ${description}` : ''}`
+}
+
+/** The model otherwise guesses `'Active'` for a column whose values are `'active'`. */
+const MAX_ENUM_VALUES = 30
+
+function formatEnumValues(values: string[]): string {
+  const shown = values.slice(0, MAX_ENUM_VALUES).map((value) => `'${value}'`)
+  const more = values.length > MAX_ENUM_VALUES ? `, … ${values.length - MAX_ENUM_VALUES} more` : ''
+  return `one of ${shown.join(', ')}${more}`
 }
 
 /** `reltuples` is a planner estimate, so say so rather than implying an exact count. */
