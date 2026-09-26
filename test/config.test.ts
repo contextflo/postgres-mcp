@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   ConfigError,
+  resolveContextFile,
   DEFAULT_HTTP_HOST,
   DEFAULT_HTTP_PORT,
   DEFAULT_MAX_ROWS,
@@ -88,11 +89,25 @@ describe('parseArgs', () => {
   })
 
   it('puts the log beside the context file', () => {
-    const config = parseArgs(['postgres://localhost/app', '--context-file', 'docs/db/context.md'])
+    const config = parseArgs(['postgres://localhost/app', '--context-file', 'docs/db/context.md'], {}, '/repo')
 
-    expect(config.contextDirectory).toBe('docs/db')
+    expect(config.contextDirectory).toBe('/repo/docs/db')
   })
 
+  it('resolves the context file against the working directory', () => {
+    expect(parseArgs(['postgres://localhost/app'], {}, '/repo').contextFile).toBe('/repo/.contextflo/context.md')
+  })
+
+  it('keeps an absolute context file as given', () => {
+    const config = parseArgs(['postgres://localhost/app', '--context-file', '/etc/team/context.md'], {}, '/repo')
+
+    expect(config.contextFile).toBe('/etc/team/context.md')
+  })
+
+  it('falls back to the home directory when started from the filesystem root', () => {
+    // Claude Desktop launches servers with cwd "/", where .contextflo/ is never what anyone meant.
+    expect(resolveContextFile('.contextflo/context.md', '/', '/home/ana')).toBe('/home/ana/.contextflo/context.md')
+  })
   it('reads the output budget', () => {
     const config = parseArgs(['postgres://localhost/app', '--max-output-chars', '1000'])
 

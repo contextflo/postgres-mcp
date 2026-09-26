@@ -2,8 +2,8 @@
 import { createRequire } from 'node:module'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { ConfigError, HelpRequested, parseArgs, type ServerConfig } from './config.js'
-import { emptyContextDocument, loadContextFile } from './context/context-file.js'
 import { ContextFileExists, readOnlyRoleSnippet, runInit } from './context/init.js'
+import { ContextStore } from './context/store.js'
 import { Database } from './db/pool.js'
 import { startHttpServer } from './http.js'
 import { QueryLog } from './log.js'
@@ -91,12 +91,16 @@ async function initialiseContextFile(database: Database, config: ServerConfig): 
 async function serve(database: Database, config: ServerConfig): Promise<void> {
   await database.warnOnWeakSetup()
 
-  const contextDocument = (await loadContextFile(config.contextFile)) ?? emptyContextDocument()
+  const contextFile = await ContextStore.open(config.contextFile)
+  const contextDocument = contextFile.current
   if (contextDocument.tables.size === 0 && !contextDocument.preamble) {
     console.error(
       `[postgres-mcp] no context file at ${config.contextFile}. Run \`postgres-mcp init <url>\` to ` +
-        'generate one — the model does better when it knows what your tables mean.'
+        'generate one, or pass --context-file with an absolute path — the model does better when it ' +
+        'knows what your tables mean.'
     )
+  } else {
+    console.error(`[postgres-mcp] context from ${config.contextFile}`)
   }
 
   const log = await QueryLog.resolve({
@@ -110,7 +114,7 @@ async function serve(database: Database, config: ServerConfig): Promise<void> {
 
   const toolContext = {
     database,
-    contextDocument,
+    contextFile,
     log,
     maxRows: config.maxRows,
     maxOutputChars: config.maxOutputChars,

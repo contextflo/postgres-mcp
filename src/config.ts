@@ -1,3 +1,5 @@
+import { homedir } from 'node:os'
+import { dirname, isAbsolute, resolve } from 'node:path'
 import { DEFAULT_CONTEXT_DIRECTORY, DEFAULT_CONTEXT_FILE } from './context/context-file.js'
 
 export interface HttpConfig {
@@ -13,6 +15,7 @@ export interface ServerConfig {
   maxRows: number
   maxOutputChars: number
   statementTimeoutMs: number
+  /** Absolute. */
   contextFile: string
   contextDirectory: string
   logFile: string | undefined
@@ -69,7 +72,11 @@ Environment:
  * The connection URL is the first positional argument, matching the archived
  * `@modelcontextprotocol/server-postgres` so migrating is a package-name swap.
  */
-export function parseArgs(argv: string[], env: NodeJS.ProcessEnv = process.env): ServerConfig {
+export function parseArgs(
+  argv: string[],
+  env: NodeJS.ProcessEnv = process.env,
+  cwd: string = process.cwd()
+): ServerConfig {
   let command: ServerConfig['command'] = 'serve'
   let connectionString: string | undefined
   let maxRows = DEFAULT_MAX_ROWS
@@ -141,24 +148,30 @@ export function parseArgs(argv: string[], env: NodeJS.ProcessEnv = process.env):
     throw new ConfigError('--log-file and --no-log contradict each other.')
   }
 
+  const resolvedContextFile = resolveContextFile(contextFile, cwd)
+
   return {
     command,
     connectionString,
     maxRows,
     maxOutputChars,
     statementTimeoutMs,
-    contextFile,
-    contextDirectory: directoryOf(contextFile),
+    contextFile: resolvedContextFile,
+    contextDirectory: dirname(resolvedContextFile),
     logFile,
     logDisabled,
     http: http ? { host, port, authToken: env.AUTH_TOKEN || undefined } : undefined,
   }
 }
 
-/** The log lives beside the context file, wherever that was pointed. */
-function directoryOf(filePath: string): string {
-  const separator = filePath.lastIndexOf('/')
-  return separator === -1 ? '.' : filePath.slice(0, separator)
+/**
+ * Relative paths resolve against the working directory — except when that is the
+ * filesystem root, which is where Claude Desktop and some other clients start servers.
+ * `/.contextflo/context.md` is never what anyone meant, so fall back to the home directory.
+ */
+export function resolveContextFile(path: string, cwd: string, home: string = homedir()): string {
+  if (isAbsolute(path)) return path
+  return resolve(cwd === '/' || /^[A-Za-z]:\\?$/.test(cwd) ? home : cwd, path)
 }
 
 function requireValue(flag: string, raw: string | undefined): string {

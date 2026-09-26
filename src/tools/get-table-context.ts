@@ -1,6 +1,6 @@
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import { getTableContext, type ColumnContext, type TableContext } from '../db/introspection.js'
-import { notesForTable, preferCuratedDescription } from '../context/context-file.js'
+import { notesForTable, preferCuratedDescription, type ContextDocument } from '../context/context-file.js'
 import type { ToolContext } from './context.js'
 
 export const GET_TABLE_CONTEXT_TOOL = {
@@ -39,7 +39,10 @@ export async function runGetTableContextTool(
     }
   }
 
-  const tables = await getTableContext(context.database, requested)
+  const [tables, document] = await Promise.all([
+    getTableContext(context.database, requested),
+    context.contextFile.refresh(),
+  ])
 
   if (tables.length === 0) {
     return {
@@ -56,7 +59,7 @@ export async function runGetTableContextTool(
     }
   }
 
-  const rendered = tables.map((table) => renderTable(context, table)).join('\n\n')
+  const rendered = tables.map((table) => renderTable(document, table)).join('\n\n')
   const missing = findMissing(requested, tables)
 
   const notice = missing.length > 0 ? `\n\nNot found: ${missing.join(', ')}.` : ''
@@ -64,8 +67,8 @@ export async function runGetTableContextTool(
   return { content: [{ type: 'text', text: rendered + notice }], isError: false }
 }
 
-function renderTable(context: ToolContext, table: TableContext): string {
-  const notes = notesForTable(context.contextDocument, table.fullyQualifiedName)
+function renderTable(document: ContextDocument, table: TableContext): string {
+  const notes = notesForTable(document, table.fullyQualifiedName)
   const description = preferCuratedDescription(notes?.description, table.description)
 
   const heading = `## ${table.fullyQualifiedName} — ${table.kind}${formatRowCount(table.approximateRows)}`
