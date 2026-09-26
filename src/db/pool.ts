@@ -32,6 +32,17 @@ import { describeConnectionError } from './errors.js'
 
 const DEFAULT_IDLE_TRANSACTION_TIMEOUT_MS = 60_000
 
+// node-postgres turns date and timestamp values into JS Dates in the *MCP process's*
+// timezone, and JSON renders those in UTC — so `2024-01-15` came out as
+// `2024-01-14T18:30:00.000Z` for anyone east of Greenwich. Hand the model exactly what
+// Postgres sent instead. Intervals too, which otherwise become `{ "days": 1 }` objects.
+const DATE_LIKE_TYPES = [1082 /* date */, 1114 /* timestamp */, 1184 /* timestamptz */, 1186 /* interval */]
+const DATE_LIKE_ARRAY_TYPES = [1182, 1115, 1185, 1187]
+const TEXT_ARRAY_TYPE: number = 1009
+
+for (const oid of DATE_LIKE_TYPES) pg.types.setTypeParser(oid, (value: string) => value)
+for (const oid of DATE_LIKE_ARRAY_TYPES) pg.types.setTypeParser(oid, pg.types.getTypeParser(TEXT_ARRAY_TYPE))
+
 export interface DatabaseOptions {
   connectionString: string
   statementTimeoutMs: number
