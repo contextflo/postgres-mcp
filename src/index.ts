@@ -91,7 +91,7 @@ async function initialiseContextFile(database: Database, config: ServerConfig): 
 async function serve(database: Database, config: ServerConfig): Promise<void> {
   await database.warnOnWeakSetup()
 
-  const contextFile = await ContextStore.open(config.contextFile)
+  const contextFile = await ContextStore.open(config.contextFile, { writable: config.contextWrites })
   const contextDocument = contextFile.current
   if (contextDocument.tables.size === 0 && !contextDocument.preamble) {
     console.error(
