@@ -79,7 +79,7 @@ a read-only role. Editing the file is the point — the business definitions sec
 | --- | --- |
 | `query` | Runs one read-only statement: `SELECT`, `WITH ... SELECT`, `EXPLAIN`, or `SHOW`. |
 | `list_tables` | Lists readable tables with descriptions. `pattern` matches anywhere in the name or description. |
-| `get_table_context` | Describes tables: columns, types, keys, foreign key targets, curated descriptions. |
+| `get_table_context` | Describes tables: columns, types, keys, foreign key targets, enum values, curated descriptions. |
 | `add_table_context` | Lets the agent write down a gotcha it found — `amount` is in cents, `status` has an undocumented value — in the context file. |
 
 There is no separate search tool, and that is deliberate. `information_schema` and `pg_catalog` are ordinary tables,

@@ -1,5 +1,6 @@
 import pg from 'pg'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { getTableContext, listTables } from '../../src/db/introspection.js'
 import { Database } from '../../src/db/pool.js'
 
 /**
@@ -68,5 +69,29 @@ describe.skipIf(!connectionString)('data fidelity and catalog shape against a li
 
   it('applies the statement timeout inside the transaction', async () => {
     await expect(database.runReadOnly('SELECT pg_sleep(3)', 10)).rejects.toThrow(/statement timeout/)
+  })
+
+  it('lists a partitioned table once, not once per partition', async () => {
+    const { tables } = await listTables(database, { schema: SCHEMA, limit: 100 })
+
+    const names = tables.map((table) => table.name)
+    expect(names).toContain('events')
+    expect(names).not.toContain('events_2024')
+  })
+
+  it('treats _ and % in a search pattern literally', async () => {
+    const { tables } = await listTables(database, { schema: SCHEMA, pattern: 'order_items', limit: 100 })
+
+    expect(tables.map((table) => table.name)).toEqual(['order_items'])
+  })
+
+  it('reports enum values, in order', async () => {
+    const [orders] = await getTableContext(database, [`${SCHEMA}.orders`])
+
+    expect(orders?.columns.find((column) => column.name === 'status')?.enumValues).toEqual([
+      'pending',
+      'paid',
+      'refunded',
+    ])
   })
 })
