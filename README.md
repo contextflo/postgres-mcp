@@ -169,6 +169,11 @@ Four deliberate differences:
 `DATABASE_URL` supplies the connection string if you do not pass one. `AUTH_TOKEN`, with `--http`, requires that
 value as a bearer token.
 
+**Connection poolers.** PgBouncer — and so the pooled connection strings from Supabase, Neon, and others — refuses
+the startup parameters this server normally sends. When that happens it reconnects without them and says so on
+stderr. Nothing is weakened: every statement still runs in `BEGIN READ ONLY` with its own statement timeout, and CI
+runs the read-only suite through PgBouncer in transaction mode.
+
 ## The context file
 
 ```markdown

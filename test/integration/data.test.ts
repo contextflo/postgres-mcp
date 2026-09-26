@@ -65,4 +65,8 @@ describe.skipIf(!connectionString)('data fidelity and catalog shape against a li
       days: ['2024-01-15'],
     })
   })
+
+  it('applies the statement timeout inside the transaction', async () => {
+    await expect(database.runReadOnly('SELECT pg_sleep(3)', 10)).rejects.toThrow(/statement timeout/)
+  })
 })
