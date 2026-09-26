@@ -222,6 +222,9 @@ before you bind `0.0.0.0`: that is a live database connection on a port. Set `AU
 network, and terminate TLS in front of it — the token is plaintext on the wire otherwise. The server prints a
 warning when it is exposed without a token.
 
+On the default loopback bind, requests whose `Host` or `Origin` is not local are refused. That is what stops a web
+page from using DNS rebinding to reach a server on `127.0.0.1` through your browser.
+
 ## Development
 
 ```bash
