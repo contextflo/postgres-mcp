@@ -2,6 +2,7 @@
 import { createRequire } from 'node:module'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { ConfigError, HelpRequested, parseArgs, type ServerConfig } from './config.js'
+import { parse as parseConnectionString } from 'pg-connection-string'
 import { ContextFileExists, readOnlyRoleSnippet, runInit } from './context/init.js'
 import { ContextStore } from './context/store.js'
 import { Database } from './db/pool.js'
@@ -70,7 +71,7 @@ async function initialiseContextFile(database: Database, config: ServerConfig): 
     throw error
   }
 
-  const databaseName = new URL(config.connectionString).pathname.replace(/^\//, '') || 'postgres'
+  const databaseName = parseConnectionString(config.connectionString).database || 'postgres'
 
   console.log(`Wrote ${result.path}`)
   console.log(
