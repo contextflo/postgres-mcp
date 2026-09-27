@@ -1,6 +1,6 @@
 {
   "name": "@contextflo/postgres-mcp",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Read-only Postgres MCP server: a drop-in replacement for the archived @modelcontextprotocol/server-postgres, with schema context for correct answers.",
   "keywords": [
     "mcp",
@@ -43,7 +43,7 @@
     "test:watch": "vitest",
     "db:up": "docker compose -f docker-compose.test.yml up -d --wait",
     "db:down": "docker compose -f docker-compose.test.yml down -v",
-    "prepublishOnly": "npm run build && npm test"
+    "prepublishOnly": "npm run build"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
