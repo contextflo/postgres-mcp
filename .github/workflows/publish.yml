@@ -1,17 +1,50 @@
 name: Publish
 
-# Tag a release to publish: git tag v0.1.0 && git push --tags
+# To release, bump "version" in package.json (and server.json) and merge to main. This runs
+# when package.json changes on main and publishes only if that version is not on npm yet, so
+# merges that do not bump the version publish nothing.
 #
 # npm: trusted publishing (OIDC), so there is no long-lived npm token to leak. One-time
 # setup after the first manual publish: npmjs.com → the package → Settings → Trusted
 # publishing → GitHub Actions, repository contextflo/postgres-mcp, workflow publish.yml.
 on:
   push:
-    tags: ['v*']
+    branches: [main]
+    paths: [package.json]
 
 jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      publish: ${{ steps.version.outputs.publish }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: version
+        name: Is this version already on npm?
+        run: |
+          version="$(node -p 'require("./package.json").version')"
+          for other in \
+            "$(node -p 'require("./server.json").version')" \
+            "$(node -p 'require("./server.json").packages[0].version')"; do
+            if [ "$other" != "$version" ]; then
+              echo "server.json says $other but package.json says $version" >&2
+              exit 1
+            fi
+          done
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if npm view "@contextflo/postgres-mcp@$version" version > /dev/null 2>&1; then
+            echo "$version is already published; nothing to do."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+
   npm:
     runs-on: ubuntu-latest
+    needs: check
+    if: needs.check.outputs.publish == 'true'
     permissions:
       contents: read
       id-token: write # npm provenance
@@ -47,19 +80,6 @@ jobs:
         env:
           TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
 
-      - name: Check the tag matches package.json and server.json
-        run: |
-          tag="${GITHUB_REF_NAME#v}"
-          for version in \
-            "$(node -p 'require("./package.json").version')" \
-            "$(node -p 'require("./server.json").version')" \
-            "$(node -p 'require("./server.json").packages[0].version')"; do
-            if [ "$tag" != "$version" ]; then
-              echo "Tag $tag does not match version $version in package.json/server.json" >&2
-              exit 1
-            fi
-          done
-
       # Trusted publishing needs npm 11.5.1 or later; Node 22 ships npm 10.
       - run: npm install -g npm@latest
       - run: npm publish --provenance --access public
@@ -69,7 +89,7 @@ jobs:
   # authorised by this workflow's GitHub OIDC token.
   mcp-registry:
     runs-on: ubuntu-latest
-    needs: npm
+    needs: [check, npm]
     permissions:
       contents: read
       id-token: write
@@ -87,7 +107,7 @@ jobs:
 
   docker:
     runs-on: ubuntu-latest
-    needs: npm
+    needs: [check, npm]
     permissions:
       contents: read
       packages: write
@@ -106,8 +126,7 @@ jobs:
         with:
           images: ghcr.io/${{ github.repository }}
           tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=${{ needs.check.outputs.version }}
             type=raw,value=latest
 
       - uses: docker/setup-qemu-action@v3
