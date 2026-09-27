@@ -1,6 +1,6 @@
 {
   "name": "@contextflo/postgres-mcp",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Read-only Postgres MCP server: a drop-in replacement for the archived @modelcontextprotocol/server-postgres, with schema context for correct answers.",
   "keywords": [
     "mcp",
@@ -13,7 +13,7 @@
     "cursor",
     "text-to-sql"
   ],
-  "homepage": "https://github.com/contextflo/postgres-mcp#readme",
+  "homepage": "https://contextflo.com/postgres-mcp",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/contextflo/postgres-mcp.git"
@@ -34,6 +34,9 @@
   "files": [
     "dist"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "vitest run",
