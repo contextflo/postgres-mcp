@@ -2,6 +2,7 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import { describeQueryError } from '../db/errors.js'
 import { SafetyError } from '../safety/errors.js'
 import { validateReadOnlySql } from '../safety/validate.js'
+import { findFunctionCalls } from '../safety/walk.js'
 import type { ToolContext } from './context.js'
 
 /**
@@ -39,7 +40,8 @@ export async function runQueryTool(
   }
 
   try {
-    validateReadOnlySql(sql)
+    const statement = validateReadOnlySql(sql)
+    await context.functions.check([...findFunctionCalls(statement)])
   } catch (error) {
     if (error instanceof SafetyError) {
       context.log.record({ sql, outcome: 'rejected', message: error.message })

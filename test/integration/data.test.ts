@@ -2,6 +2,9 @@ import pg from 'pg'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { getTableContext, listTables, roleCanWrite } from '../../src/db/introspection.js'
 import { Database } from '../../src/db/pool.js'
+import { FunctionPolicy } from '../../src/safety/functions.js'
+import { ensureParserReady, validateReadOnlySql } from '../../src/safety/validate.js'
+import { findFunctionCalls } from '../../src/safety/walk.js'
 
 /**
  * What the model actually sees from a live database: values rendered faithfully, and a
@@ -104,6 +107,52 @@ describe.skipIf(!connectionString)('data fidelity and catalog shape against a li
       await setupClient.query(`DROP OWNED BY ${role}`)
       await setupClient.query(`DROP ROLE ${role}`)
     }
+  })
+
+  describe('function policy from the real catalog', () => {
+    let policy: FunctionPolicy
+
+    async function check(sql: string): Promise<void> {
+      await policy.check([...findFunctionCalls(validateReadOnlySql(sql))])
+    }
+
+    beforeAll(async () => {
+      await ensureParserReady()
+      await setupClient.query(`
+        CREATE FUNCTION ${SCHEMA}.stable_calc(x int) RETURNS int STABLE LANGUAGE sql AS 'SELECT x * 2';
+        CREATE FUNCTION ${SCHEMA}.volatile_calc(x int) RETURNS int VOLATILE LANGUAGE sql AS 'SELECT x * 2';
+        CREATE FUNCTION ${SCHEMA}.definer_calc(x int) RETURNS int STABLE SECURITY DEFINER LANGUAGE sql AS 'SELECT x * 2';
+      `)
+      policy = await FunctionPolicy.fromDatabase(database)
+    })
+
+    // Postgres versions label functions, so an analysis function newly marked volatile
+    // in some release shows up here rather than as a mysterious refusal.
+    it.each([
+      `SELECT date_trunc('month', created_at), count(*), sum(total_amount), avg(total_amount), round(avg(total_amount), 2) FROM x GROUP BY 1`,
+      'SELECT row_number() OVER (PARTITION BY a ORDER BY b), lag(c) OVER (ORDER BY b) FROM x',
+      "SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY a), string_agg(b, ',') FROM x",
+      "SELECT extract(epoch FROM b - a) / 86400, to_char(a, 'YYYY-MM') FROM x",
+      "SELECT generate_series(date '2026-01-01', date '2026-02-01', interval '1 day')",
+      `SELECT jsonb_build_object('a', 1), jsonb_extract_path_text('{"a":1}'::jsonb, 'a')`,
+      "SELECT lower(a), split_part(a, '@', 2), regexp_replace(a, '@.*', ''), length(a), now(), age(now(), b) FROM x",
+      "SELECT pg_size_pretty(pg_total_relation_size('orders')), random()",
+      "SELECT obj_description(1, 'pg_class'), format_type(23, -1), current_setting('TimeZone')",
+      `SELECT ${SCHEMA}.stable_calc(1)`,
+    ])('allows %s', async (sql) => {
+      await expect(check(sql)).resolves.toBeUndefined()
+    })
+
+    it.each([
+      ['SELECT pg_sleep(1)', /volatile/],
+      ['SELECT pg_current_wal_lsn()', /volatile/],
+      ['SELECT pg_advisory_unlock_all()', /volatile/],
+      [`SELECT ${SCHEMA}.volatile_calc(1)`, /volatile/],
+      [`SELECT ${SCHEMA}.definer_calc(1)`, /SECURITY DEFINER/],
+      ['SELECT datediff(1, 2)', /does not exist/],
+    ])('refuses %s', async (sql, message) => {
+      await expect(check(sql)).rejects.toThrowError(message)
+    })
   })
 
   it('reports enum values, in order', async () => {

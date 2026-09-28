@@ -9,6 +9,7 @@ import { roleCanWrite } from './db/introspection.js'
 import { Database } from './db/pool.js'
 import { startHttpServer } from './http.js'
 import { QueryLog } from './log.js'
+import { FunctionPolicy } from './safety/functions.js'
 import { ensureParserReady } from './safety/validate.js'
 import { createServer } from './server.js'
 
@@ -118,8 +119,11 @@ async function serve(database: Database, config: ServerConfig): Promise<void> {
     console.error(`[postgres-mcp] logging queries to ${log.filePath}`)
   }
 
+  const functions = await FunctionPolicy.fromDatabase(database)
+
   const toolContext = {
     database,
+    functions,
     contextFile,
     log,
     maxRows: config.maxRows,

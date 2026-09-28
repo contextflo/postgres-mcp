@@ -1,3 +1,4 @@
+import { FunctionPolicy } from '../src/safety/functions.js'
 import type { AddressInfo } from 'node:net'
 import { request as httpRequest, type Server as HttpServer } from 'node:http'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
@@ -31,6 +32,7 @@ async function start(authToken?: string): Promise<string> {
           log: QueryLog.disabled(),
           maxRows: 10,
           maxOutputChars: 50_000,
+          functions: FunctionPolicy.fromEntries([]),
         },
         version: '0.0.0-test',
         connectionString: 'postgres://user@localhost/app',
