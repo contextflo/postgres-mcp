@@ -7,7 +7,7 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { parseContextFile } from '../src/context/context-file.js'
 import { ContextStore } from '../src/context/store.js'
-import type { Database } from '../src/db/pool.js'
+import { LazyDatabase, type Database } from '../src/db/pool.js'
 import { QueryLog } from '../src/log.js'
 import { ensureParserReady } from '../src/safety/validate.js'
 import { createServer } from '../src/server.js'
@@ -276,6 +276,39 @@ describe('add_table_context', () => {
     const result = await client.callTool({ name: 'add_table_context', arguments: { table: 'public.orders' } })
 
     expect(result.isError).toBe(true)
+  })
+})
+
+describe('without a database', () => {
+  beforeEach(async () => {
+    // As the real server wires it: the function catalog is read through the same database.
+    const database = new LazyDatabase(null)
+    await connect({ database: database as unknown as Database, functions: FunctionPolicy.fromDatabase(database) })
+  })
+
+  it('still lists its tools, which is all a directory like Glama checks', async () => {
+    const { tools } = await client.listTools()
+
+    expect(tools.map((tool) => tool.name).sort()).toEqual(['get_table_context', 'list_tables', 'query'])
+  })
+
+  it('answers a tool call with an error that says what to do', async () => {
+    for (const [name, args] of [
+      ['query', { sql: 'SELECT count(*) FROM orders' }],
+      ['list_tables', {}],
+      ['get_table_context', { tables: ['orders'] }],
+    ] as const) {
+      const result = await client.callTool({ name, arguments: args })
+
+      expect(result.isError).toBe(true)
+      expect(JSON.stringify(result.content)).toContain('No database is configured')
+    }
+  })
+
+  it('still refuses writes before it would need the database', async () => {
+    const result = await client.callTool({ name: 'query', arguments: { sql: 'DELETE FROM orders' } })
+
+    expect(JSON.stringify(result.content)).toContain('DELETE is not allowed')
   })
 })
 

@@ -1,4 +1,4 @@
-import type { Database } from './pool.js'
+import type { Queryable } from './pool.js'
 
 /**
  * Schema introspection straight off the live catalog.
@@ -63,7 +63,7 @@ export interface TableContext {
  * superuser, or write privileges on any visible table. `init` uses it to decide whether
  * to recommend a read-only role at all.
  */
-export async function roleCanWrite(database: Database): Promise<boolean> {
+export async function roleCanWrite(database: Queryable): Promise<boolean> {
   const [row] = await database.internalQuery<{ can_write: boolean }>(
     `
     SELECT (SELECT rolsuper FROM pg_roles WHERE rolname = current_user)
@@ -89,7 +89,7 @@ export async function roleCanWrite(database: Database): Promise<boolean> {
  * model away empty-handed.
  */
 export async function listTables(
-  database: Database,
+  database: Queryable,
   options: { pattern?: string | undefined; schema?: string | undefined; limit: number }
 ): Promise<ListTablesResult> {
   const pattern = options.pattern ?? null
@@ -169,7 +169,7 @@ function escapeLike(pattern: string): string {
  * visible schema, because a model that read `orders` in a list will ask for `orders`.
  */
 export async function getTableContext(
-  database: Database,
+  database: Queryable,
   fullyQualifiedNames: string[]
 ): Promise<TableContext[]> {
   if (fullyQualifiedNames.length === 0) return []

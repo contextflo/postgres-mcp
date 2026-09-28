@@ -13,7 +13,8 @@ export interface HttpConfig {
 
 export interface ServerConfig {
   command: 'serve' | 'init'
-  connectionString: string
+  /** Undefined when none was given; required for init. */
+  connectionString: string | undefined
   maxRows: number
   maxOutputChars: number
   statementTimeoutMs: number
@@ -153,8 +154,10 @@ export function parseArgs(
   const dotEnv = readDotEnv(cwd)
   connectionString ??= env.DATABASE_URL || dotEnv.DATABASE_URL
 
-  if (!connectionString) {
-    throw new ConfigError(`A Postgres connection string is required.\n\n${USAGE}`)
+  // init reads the schema, so it needs a database now. The server does not: it starts
+  // without one and reports the missing connection on the first tool call.
+  if (!connectionString && command === 'init') {
+    throw new ConfigError(`init needs a Postgres connection string.\n\n${USAGE}`)
   }
 
   if (logFile && logDisabled) {

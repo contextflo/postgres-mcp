@@ -60,9 +60,12 @@ describe('parseArgs', () => {
     expect(() => parseArgs(['postgres://localhost/app', ...flags])).toThrow(ConfigError)
   })
 
-  it('requires a connection string', () => {
-    delete process.env.DATABASE_URL
-    expect(() => parseArgs([])).toThrow(ConfigError)
+  it('starts without a connection string, so directories can list the tools', () => {
+    expect(parseArgs([], {}, '/repo').connectionString).toBeUndefined()
+  })
+
+  it('requires a connection string for init, which reads the schema', () => {
+    expect(() => parseArgs(['init'], {}, '/repo')).toThrow(ConfigError)
   })
 
   it('rejects unknown options and stray arguments', () => {
