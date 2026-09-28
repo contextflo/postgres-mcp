@@ -5,6 +5,7 @@ import { ConfigError, HelpRequested, parseArgs, type ServerConfig } from './conf
 import { parse as parseConnectionString } from 'pg-connection-string'
 import { ContextFileExists, readOnlyRoleSnippet, runInit } from './context/init.js'
 import { ContextStore } from './context/store.js'
+import { roleCanWrite } from './db/introspection.js'
 import { Database } from './db/pool.js'
 import { startHttpServer } from './http.js'
 import { QueryLog } from './log.js'
@@ -81,10 +82,14 @@ async function initialiseContextFile(database: Database, config: ServerConfig): 
   if (result.truncated) {
     console.log('  Note: only the first 1000 tables were included.')
   }
-  console.log('\nEdit it — the business definitions section is where the value is.\n')
-  console.log('Recommended: connect as a role that cannot write, so read-only holds even if this')
-  console.log('server has a bug.\n')
-  console.log(readOnlyRoleSnippet(databaseName, result.schemas))
+  console.log('\nEdit it: the business definitions section is where the value is.')
+
+  // Already on a role that cannot write, which is the recommended setup: nothing to add.
+  if (await roleCanWrite(database)) {
+    console.log('\nThis role can write. Connect as one that cannot, so read-only holds even if this')
+    console.log('server has a bug:\n')
+    console.log(readOnlyRoleSnippet(databaseName, result.schemas))
+  }
 
   await database.close()
 }

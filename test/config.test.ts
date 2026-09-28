@@ -1,6 +1,10 @@
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   ConfigError,
+  readDotEnv,
   resolveContextFile,
   DEFAULT_HTTP_HOST,
   DEFAULT_HTTP_PORT,
@@ -127,5 +131,53 @@ describe('parseArgs', () => {
 
   it('treats --help as a success, not an error', () => {
     expect(() => parseArgs(['--help'])).toThrow(HelpRequested)
+  })
+})
+
+describe('.env', () => {
+  let directory: string | undefined
+
+  afterEach(() => {
+    if (directory) rmSync(directory, { recursive: true, force: true })
+    directory = undefined
+  })
+
+  function projectWithEnv(contents: string): string {
+    directory = mkdtempSync(join(tmpdir(), 'postgres-mcp-env-'))
+    writeFileSync(join(directory, '.env'), contents)
+    return directory
+  }
+
+  it('supplies the connection string, so it never has to be typed or shown', () => {
+    const cwd = projectWithEnv("DATABASE_URL='postgresql://ro@db.example.com/app?sslmode=require&x=1'\n")
+
+    expect(parseArgs([], {}, cwd).connectionString).toBe('postgresql://ro@db.example.com/app?sslmode=require&x=1')
+  })
+
+  it('loses to the environment and to the command line', () => {
+    const cwd = projectWithEnv('DATABASE_URL=postgresql://from-file/app\n')
+
+    expect(parseArgs([], { DATABASE_URL: 'postgresql://from-env/app' }, cwd).connectionString).toBe(
+      'postgresql://from-env/app'
+    )
+    expect(parseArgs(['postgresql://from-arg/app'], {}, cwd).connectionString).toBe('postgresql://from-arg/app')
+  })
+
+  it('reads only the variables this server uses', () => {
+    const cwd = projectWithEnv('DATABASE_URL=postgresql://x/app\nAUTH_TOKEN=secret\nSTRIPE_KEY=sk_live_nope\n')
+
+    expect(readDotEnv(cwd)).toEqual({ DATABASE_URL: 'postgresql://x/app', AUTH_TOKEN: 'secret' })
+  })
+
+  it('supplies the HTTP bearer token too', () => {
+    const cwd = projectWithEnv('DATABASE_URL=postgresql://x/app\nAUTH_TOKEN=secret\n')
+
+    expect(parseArgs(['--http'], {}, cwd).http?.authToken).toBe('secret')
+  })
+
+  it('is optional', () => {
+    directory = mkdtempSync(join(tmpdir(), 'postgres-mcp-env-'))
+
+    expect(readDotEnv(directory)).toEqual({})
   })
 })
