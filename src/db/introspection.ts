@@ -59,6 +59,28 @@ export interface TableContext {
 }
 
 /**
+ * Whether the connected role could change data if the other read-only layers failed: a
+ * superuser, or write privileges on any visible table. `init` uses it to decide whether
+ * to recommend a read-only role at all.
+ */
+export async function roleCanWrite(database: Database): Promise<boolean> {
+  const [row] = await database.internalQuery<{ can_write: boolean }>(
+    `
+    SELECT (SELECT rolsuper FROM pg_roles WHERE rolname = current_user)
+        OR EXISTS (
+             SELECT 1
+               FROM pg_class c
+               JOIN pg_namespace n ON n.oid = c.relnamespace
+              WHERE c.relkind IN ('r', 'p')
+                AND ${VISIBLE_SCHEMAS}
+                AND has_table_privilege(c.oid, 'INSERT, UPDATE, DELETE, TRUNCATE')
+           ) AS can_write
+    `
+  )
+  return row?.can_write ?? true
+}
+
+/**
  * Lists tables, optionally narrowed by a case-insensitive substring.
  *
  * The pattern matches anywhere in the table name, the qualified name, or the table's

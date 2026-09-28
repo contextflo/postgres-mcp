@@ -22,56 +22,69 @@ and this server hands to the model. No database, no index, no service.
 
 ## Setup
 
-Add it to your MCP client:
+**1. Create a read-only role.** Run this as the database owner, in `psql` or your provider's SQL editor. Use your
+database name and a real password, and repeat the schema lines for each schema the agent should see:
+
+```sql
+CREATE ROLE mcp_readonly LOGIN PASSWORD 'change-me';
+GRANT CONNECT ON DATABASE mydb TO mcp_readonly;
+GRANT USAGE ON SCHEMA public TO mcp_readonly;
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO mcp_readonly;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO mcp_readonly;
+```
+
+This makes read-only a property of the database, not just of this server's code.
+
+**2. Put that role's connection string in `.env`** in your project folder:
+
+```bash
+DATABASE_URL='postgresql://mcp_readonly:change-me@db.example.com:5432/mydb'
+```
+
+Keep the quotes: hosted providers add `?sslmode=require&...`, and the `&` needs them. The server reads `DATABASE_URL`
+from `.env` in the directory it starts in, so the connection string never appears on a command line.
+
+**3. Generate the context file:**
+
+```bash
+npx @contextflo/postgres-mcp init
+```
+
+That writes `.contextflo/context.md`, seeded from your `COMMENT ON` values. Edit it: the business definitions section
+is where the value is.
+
+**4. Add it to your client.** Claude Code starts servers in your project folder, so it finds `.env` and the context
+file on its own:
+
+```bash
+claude mcp add postgres --scope project -- npx -y @contextflo/postgres-mcp
+```
+
+`--scope project` writes `.mcp.json` into the folder instead of your global config.
+
+<details>
+<summary>Cursor, Claude Desktop, VS Code</summary>
+
+Other clients may start servers outside your project folder (Claude Desktop starts them in `/`), so give them the
+connection string and the context file explicitly:
 
 ```json
 {
   "mcpServers": {
     "postgres": {
       "command": "npx",
-      "args": ["-y", "@contextflo/postgres-mcp", "postgresql://localhost/mydb"]
+      "args": ["-y", "@contextflo/postgres-mcp", "--context-file", "/path/to/project/.contextflo/context.md"],
+      "env": { "DATABASE_URL": "postgresql://mcp_readonly:change-me@db.example.com:5432/mydb" }
     }
   }
 }
 ```
 
-<details>
-<summary>Claude Code, Cursor, Claude Desktop, VS Code</summary>
-
-**Claude Code**
-
-```bash
-claude mcp add postgres -- npx -y @contextflo/postgres-mcp postgresql://localhost/mydb
-```
-
-**Cursor** uses `.cursor/mcp.json`, same shape as above.
-
-**Claude Desktop** uses `claude_desktop_config.json`
-(macOS: `~/Library/Application Support/Claude/`, Windows: `%APPDATA%\Claude\`), same shape as above.
-
-**VS Code** uses `.vscode/mcp.json`:
-
-```json
-{
-  "servers": {
-    "postgres": {
-      "command": "npx",
-      "args": ["-y", "@contextflo/postgres-mcp", "postgresql://localhost/mydb"]
-    }
-  }
-}
-```
+**Cursor** uses `.cursor/mcp.json`. **Claude Desktop** uses `claude_desktop_config.json` (macOS:
+`~/Library/Application Support/Claude/`, Windows: `%APPDATA%\Claude\`). **VS Code** uses `.vscode/mcp.json`, with
+`servers` in place of `mcpServers`.
 
 </details>
-
-Then generate a context file:
-
-```bash
-npx @contextflo/postgres-mcp init postgresql://localhost/mydb
-```
-
-That writes `.contextflo/context.md`, seeded from your `COMMENT ON` values, and prints the `CREATE ROLE` snippet for
-a read-only role. Editing the file is the point: the business definitions section is where the value is.
 
 ## Tools
 
@@ -125,17 +138,8 @@ The same walk rejects built-in functions that act outside the transaction even i
 `pg_terminate_backend`, session-level advisory locks, `set_config`, and the server-filesystem functions.
 
 **4. A read-only database role.** The layers above are code, and code has bugs. A role that cannot write is enforced
-by Postgres regardless. `init` prints the snippet; this is the setup we recommend:
-
-```sql
-CREATE ROLE mcp_readonly LOGIN PASSWORD 'change-me';
-GRANT CONNECT ON DATABASE mydb TO mcp_readonly;
-GRANT USAGE ON SCHEMA public TO mcp_readonly;
-GRANT SELECT ON ALL TABLES IN SCHEMA public TO mcp_readonly;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO mcp_readonly;
-```
-
-The server warns on startup if you connect as a superuser.
+by Postgres regardless, which is why creating one is the first step of [Setup](#setup). The server warns on startup
+if you connect as a superuser, and `init` prints the role snippet if the role it connects as can write.
 
 **What this does not protect against.** The parser cannot see inside a user-defined function, so a volatile or
 `SECURITY DEFINER` function called from an allowed `SELECT` can do anything its body does, including open its own
@@ -177,7 +181,8 @@ Four deliberate differences:
 --host <addr>             HTTP bind address (default: 127.0.0.1)
 ```
 
-`DATABASE_URL` supplies the connection string if you do not pass one. `AUTH_TOKEN`, with `--http`, requires that
+`DATABASE_URL` supplies the connection string if you do not pass one, from the environment or from `.env` in the
+current directory. `AUTH_TOKEN`, with `--http`, requires that
 value as a bearer token.
 
 **Connection poolers.** PgBouncer (and so the pooled connection strings from Supabase, Neon, and others) refuses

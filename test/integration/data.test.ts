@@ -1,6 +1,6 @@
 import pg from 'pg'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { getTableContext, listTables } from '../../src/db/introspection.js'
+import { getTableContext, listTables, roleCanWrite } from '../../src/db/introspection.js'
 import { Database } from '../../src/db/pool.js'
 
 /**
@@ -83,6 +83,27 @@ describe.skipIf(!connectionString)('data fidelity and catalog shape against a li
     const { tables } = await listTables(database, { schema: SCHEMA, pattern: 'order_items', limit: 100 })
 
     expect(tables.map((table) => table.name)).toEqual(['order_items'])
+  })
+
+  it('knows whether the connected role could write, so init only recommends a read-only role when needed', async () => {
+    expect(await roleCanWrite(database)).toBe(true)
+
+    const role = `postgres_mcp_probe_${process.pid}`
+    await setupClient.query(`CREATE ROLE ${role} LOGIN PASSWORD 'probe'`)
+    await setupClient.query(`GRANT USAGE ON SCHEMA ${SCHEMA} TO ${role}`)
+    await setupClient.query(`GRANT SELECT ON ALL TABLES IN SCHEMA ${SCHEMA} TO ${role}`)
+
+    const url = new URL(connectionString!)
+    url.username = role
+    url.password = 'probe'
+    const readOnly = await Database.connect({ connectionString: url.toString(), statementTimeoutMs: 1_000 })
+    try {
+      expect(await roleCanWrite(readOnly)).toBe(false)
+    } finally {
+      await readOnly.close()
+      await setupClient.query(`DROP OWNED BY ${role}`)
+      await setupClient.query(`DROP ROLE ${role}`)
+    }
   })
 
   it('reports enum values, in order', async () => {

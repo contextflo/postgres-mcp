@@ -1,5 +1,7 @@
+import { readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { dirname, isAbsolute, resolve } from 'node:path'
+import { dirname, isAbsolute, join, resolve } from 'node:path'
+import { parseEnv } from 'node:util'
 import { DEFAULT_CONTEXT_DIRECTORY, DEFAULT_CONTEXT_FILE } from './context/context-file.js'
 
 export interface HttpConfig {
@@ -49,7 +51,8 @@ Usage:
   npx @contextflo/postgres-mcp <connection-string> [options]
   npx @contextflo/postgres-mcp init <connection-string>
 
-The connection string may also be supplied via the DATABASE_URL environment variable.
+The connection string may also be supplied via DATABASE_URL, in the environment or in a
+.env file in the current directory.
 
 Commands:
   init                      Scan the schema and write ${DEFAULT_CONTEXT_FILE} for you to edit
@@ -69,7 +72,9 @@ Options:
 
 Environment:
   DATABASE_URL              Connection string, if not given as an argument
-  AUTH_TOKEN                If set with --http, require this as a bearer token`
+  AUTH_TOKEN                If set with --http, require this as a bearer token
+
+Both are also read from .env in the current directory; the environment wins.`
 
 /**
  * The connection URL is the first positional argument, matching the archived
@@ -145,7 +150,8 @@ export function parseArgs(
     }
   }
 
-  connectionString ??= env.DATABASE_URL
+  const dotEnv = readDotEnv(cwd)
+  connectionString ??= env.DATABASE_URL || dotEnv.DATABASE_URL
 
   if (!connectionString) {
     throw new ConfigError(`A Postgres connection string is required.\n\n${USAGE}`)
@@ -168,8 +174,33 @@ export function parseArgs(
     contextDirectory: dirname(resolvedContextFile),
     logFile,
     logDisabled,
-    http: http ? { host, port, authToken: env.AUTH_TOKEN || undefined } : undefined,
+    http: http ? { host, port, authToken: env.AUTH_TOKEN || dotEnv.AUTH_TOKEN || undefined } : undefined,
   }
+}
+
+/** The only variables this server reads. Anything else in a project's .env is left alone. */
+const DOT_ENV_KEYS = ['DATABASE_URL', 'AUTH_TOKEN'] as const
+
+/**
+ * `DATABASE_URL` and `AUTH_TOKEN` from `.env` in `cwd`, so a connection string can live in a
+ * file instead of on the command line or in a client config. A missing file is not an error.
+ */
+export function readDotEnv(cwd: string): Partial<Record<(typeof DOT_ENV_KEYS)[number], string>> {
+  let raw: string
+  try {
+    raw = readFileSync(join(cwd, '.env'), 'utf8')
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return {}
+    throw error
+  }
+
+  const parsed = parseEnv(raw)
+  const values: Partial<Record<(typeof DOT_ENV_KEYS)[number], string>> = {}
+  for (const key of DOT_ENV_KEYS) {
+    const value = parsed[key]
+    if (value) values[key] = value
+  }
+  return values
 }
 
 /**
