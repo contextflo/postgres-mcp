@@ -53,4 +53,28 @@ describe('function policy', () => {
   ])('refuses %s', async (sql, message) => {
     await expect(check(sql)).rejects.toThrowError(message)
   })
+
+  describe('allowlisted names outside pg_catalog', () => {
+    // A user can create public.random() that writes. The allowlist covers pg_catalog.random().
+    const shadowed = FunctionPolicy.fromEntries([
+      ...CATALOG,
+      { schema: 'public', name: 'random', volatility: 'v', securityDefiner: false },
+    ])
+
+    async function checkShadowed(sql: string): Promise<void> {
+      await shadowed.check([...findFunctionCalls(validateReadOnlySql(sql))])
+    }
+
+    it('refuses a schema-qualified call to the user-defined one', async () => {
+      await expect(checkShadowed('SELECT public.random()')).rejects.toThrowError(/volatile/)
+    })
+
+    it('refuses an unqualified call that could resolve to it', async () => {
+      await expect(checkShadowed('SELECT random()')).rejects.toThrowError(/volatile/)
+    })
+
+    it('still allows the pg_catalog one by name', async () => {
+      await expect(checkShadowed('SELECT pg_catalog.random()')).resolves.toBeUndefined()
+    })
+  })
 })

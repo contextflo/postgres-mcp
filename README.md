@@ -1,12 +1,17 @@
 # @contextflo/postgres-mcp
 
-The analytics MCP server for Postgres. Read-only by construction, with schema context that makes answers correct.
+The analytics MCP server for Postgres. Read-only by construction, with a context file you and the agent both write
+to, so the model answers the way your team would.
 
 Built and maintained by [Contextflo](https://contextflo.com/postgres-mcp).
 
 A drop-in replacement for the archived `@modelcontextprotocol/server-postgres`, which shipped with a
 [SQL injection vulnerability](https://securitylabs.datadoghq.com/articles/mcp-vulnerability-case-study-SQL-injection-in-the-postgresql-mcp-server/)
 that let `COMMIT; DROP SCHEMA public CASCADE` walk straight out of its read-only transaction.
+
+[Watch the 100-second demo](https://assets.contextflo.com/features/postgres-mcp/postgres-mcp-tutorial.mp4): setup, the
+agent working out that an events table is not what it looks like and saving that as a note, and a `DROP` the server
+refuses.
 
 ```bash
 npx @contextflo/postgres-mcp postgresql://localhost/mydb
@@ -15,12 +20,13 @@ npx @contextflo/postgres-mcp postgresql://localhost/mydb
 ## Why this one
 
 **Read-only that holds up.** The archived server enforced read-only as a property of the SQL *string*. Here it is a
-property of the connection, the role, and the wire protocol: four independent layers, each of which stops that
-payload on its own. The exploit is a test case in this repo.
+property of the wire protocol, the connection, the Postgres parser, and the database role: four independent layers,
+each of which stops that payload on its own. The exploit is a test case in this repo.
 
 **Answers that make sense.** A model that does not know `fct_orders_v2` is the table your team actually uses, or that
 `revenue` is gross rather than net, writes confident, wrong SQL. `.contextflo/context.md` is a markdown file you edit
-and this server hands to the model. No database, no index, no service.
+and this server hands to the model, with nothing behind it but the file. The agent adds to it too: when it learns
+something the schema does not say, `add_table_context` appends a note, which you review in a diff like any other change.
 
 ## Setup
 
@@ -146,9 +152,12 @@ their owner's privileges, are refused whatever their label. A fixed list of know
 by Postgres regardless, which is why creating one is the first step of [Setup](#setup). The server warns on startup
 if you connect as a superuser, and `init` prints the role snippet if the role it connects as can write.
 
-**What this does not protect against.** A function's label is only as honest as whoever created it: a user-defined
-function declared `STABLE` that writes anyway is allowed. Layer 4 is what stops that, which is why the read-only role
-is the recommended setup rather than an optional extra. Read-only is also not
+**What this does not protect against.** The function check sees the functions a query calls directly, and it trusts
+how each is labelled. A user-defined function declared `STABLE` that writes anyway is allowed, and so is a function
+reached indirectly: inside a view, behind an operator, or through a type cast. The read-only transaction still refuses
+anything that changes table data that way; what can slip through is the rarer kind of side effect, such as a message
+written to the WAL. Layer 4 is what stops those, which is why the read-only role is the recommended setup rather than
+an optional extra. Read-only is also not
 confidentiality: anything the connected role can read, a model can read, so grant it only what you want an agent
 to see.
 

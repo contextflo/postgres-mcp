@@ -16,7 +16,10 @@ import type { FunctionCall } from './walk.js'
  * STABLE that writes anyway; a read-only role is what stops that.
  */
 
-/** Volatile, but read-only and useful for analysis. */
+/**
+ * Volatile, but read-only and useful for analysis. These name pg_catalog's own functions:
+ * a user-defined `public.random()` shares the name, not the behaviour, so it is not covered.
+ */
 const VOLATILE_ALLOWLIST = new Set([
   'random',
   'random_normal',
@@ -25,8 +28,6 @@ const VOLATILE_ALLOWLIST = new Set([
   'gen_random_uuid',
   'uuidv4',
   'uuidv7',
-  'uuid_generate_v1',
-  'uuid_generate_v4',
   'clock_timestamp',
   'timeofday',
   'pg_relation_size',
@@ -116,7 +117,11 @@ export class FunctionPolicy {
         )
       }
 
-      if (candidates.some((entry) => entry.volatility === 'v') && !VOLATILE_ALLOWLIST.has(call.name)) {
+      const unsafe = candidates.some(
+        (entry) =>
+          entry.volatility === 'v' && !(entry.schema === 'pg_catalog' && VOLATILE_ALLOWLIST.has(entry.name))
+      )
+      if (unsafe) {
         throw new SafetyError(
           'FUNCTION_NOT_ALLOWED',
           `This server is for read-only analysis; ${label}() is not allowed because Postgres marks it volatile, ` +

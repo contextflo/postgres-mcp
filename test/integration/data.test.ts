@@ -122,6 +122,7 @@ describe.skipIf(!connectionString)('data fidelity and catalog shape against a li
         CREATE FUNCTION ${SCHEMA}.stable_calc(x int) RETURNS int STABLE LANGUAGE sql AS 'SELECT x * 2';
         CREATE FUNCTION ${SCHEMA}.volatile_calc(x int) RETURNS int VOLATILE LANGUAGE sql AS 'SELECT x * 2';
         CREATE FUNCTION ${SCHEMA}.definer_calc(x int) RETURNS int STABLE SECURITY DEFINER LANGUAGE sql AS 'SELECT x * 2';
+        CREATE FUNCTION ${SCHEMA}.random() RETURNS double precision VOLATILE LANGUAGE sql AS 'SELECT 0.5';
       `)
       policy = await FunctionPolicy.fromDatabase(database)
     })
@@ -149,6 +150,8 @@ describe.skipIf(!connectionString)('data fidelity and catalog shape against a li
       ['SELECT pg_advisory_unlock_all()', /volatile/],
       [`SELECT ${SCHEMA}.volatile_calc(1)`, /volatile/],
       [`SELECT ${SCHEMA}.definer_calc(1)`, /SECURITY DEFINER/],
+      // Shares an allowlisted name with pg_catalog.random(), but is not it.
+      [`SELECT ${SCHEMA}.random()`, /volatile/],
       ['SELECT datediff(1, 2)', /does not exist/],
     ])('refuses %s', async (sql, message) => {
       await expect(check(sql)).rejects.toThrowError(message)
