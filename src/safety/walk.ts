@@ -46,14 +46,20 @@ export function* findStatementNodes(node: unknown): Generator<StatementNode> {
   }
 }
 
+export interface FunctionCall {
+  /** The schema the call names explicitly (`pg_catalog.now()`), or null. */
+  schema: string | null
+  /** As Postgres will resolve it: the parser has already folded unquoted names to lower case. */
+  name: string
+}
+
 /**
- * Yields the lower-cased, unqualified name of every function call anywhere in the tree —
- * in the select list, FROM (`dblink(...) AS t`), WHERE, subqueries, CTEs. The schema
- * qualifier is dropped so `pg_catalog.pg_read_file` and `pg_read_file` look the same.
+ * Yields every function call anywhere in the tree: in the select list, FROM
+ * (`dblink(...) AS t`), WHERE, subqueries, CTEs.
  */
-export function* findFunctionNames(node: unknown): Generator<string> {
+export function* findFunctionCalls(node: unknown): Generator<FunctionCall> {
   if (Array.isArray(node)) {
-    for (const item of node) yield* findFunctionNames(item)
+    for (const item of node) yield* findFunctionCalls(item)
     return
   }
 
@@ -61,10 +67,21 @@ export function* findFunctionNames(node: unknown): Generator<string> {
 
   for (const [key, value] of Object.entries(node)) {
     if (key === 'FuncCall' && isRecord(value) && Array.isArray(value.funcname)) {
-      const last = value.funcname[value.funcname.length - 1] as { String?: { sval?: unknown } } | undefined
-      const name = last?.String?.sval
-      if (typeof name === 'string') yield name.toLowerCase()
+      const parts = value.funcname.map((part) => (part as { String?: { sval?: unknown } })?.String?.sval)
+      const name = parts[parts.length - 1]
+      const schema = parts.length > 1 ? parts[parts.length - 2] : null
+      if (typeof name === 'string') {
+        yield { schema: typeof schema === 'string' ? schema : null, name }
+      }
     }
-    yield* findFunctionNames(value)
+    yield* findFunctionCalls(value)
   }
+}
+
+/**
+ * Lower-cased, unqualified names of every function call, so `pg_catalog.pg_read_file`
+ * and `pg_read_file` look the same to a name check.
+ */
+export function* findFunctionNames(node: unknown): Generator<string> {
+  for (const call of findFunctionCalls(node)) yield call.name.toLowerCase()
 }

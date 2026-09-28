@@ -1,3 +1,4 @@
+import { FunctionPolicy } from '../src/safety/functions.js'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -60,6 +61,7 @@ async function connect(context: Partial<ToolContext> = {}): Promise<void> {
       log: QueryLog.disabled(),
       maxRows: 10,
       maxOutputChars: 50_000,
+      functions: FunctionPolicy.fromEntries([]),
       ...context,
     },
     version: '0.0.0-test',

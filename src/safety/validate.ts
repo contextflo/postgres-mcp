@@ -33,12 +33,13 @@ interface RawStatement {
 }
 
 /**
- * Throws {@link SafetyError} unless `sql` is a single read-only statement.
+ * Throws {@link SafetyError} unless `sql` is a single read-only statement. Returns the
+ * statement's parse tree, for checks that need the database (see ./functions.ts).
  *
  * Accepts: SELECT (including `WITH ... SELECT`, set operations, and subqueries), EXPLAIN
  * over an otherwise-accepted statement, and SHOW.
  */
-export function validateReadOnlySql(sql: string): void {
+export function validateReadOnlySql(sql: string): Record<string, unknown> {
   if (sql.trim() === '') {
     // libpg-query reports this as a parse error; EMPTY_STATEMENT is the clearer contract.
     throw new SafetyError('EMPTY_STATEMENT', 'No SQL statement found. Provide a single SELECT, EXPLAIN, or SHOW.')
@@ -81,7 +82,9 @@ export function validateReadOnlySql(sql: string): void {
     }
   }
 
-  for (const name of findFunctionNames(statements[0].stmt)) {
+  const statement = statements[0].stmt
+
+  for (const name of findFunctionNames(statement)) {
     if (isDeniedFunction(name)) {
       throw new SafetyError(
         'FUNCTION_NOT_ALLOWED',
@@ -91,6 +94,8 @@ export function validateReadOnlySql(sql: string): void {
       )
     }
   }
+
+  return statement
 }
 
 /**
