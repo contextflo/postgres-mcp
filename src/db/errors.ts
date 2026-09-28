@@ -2,7 +2,7 @@
  * Turns Postgres driver errors into messages a model can act on, without echoing more of
  * the database's internals than the caller already knew.
  *
- * Ported from the ContextFlo connector's `executeQuery` error handling and extended with
+ * Ported from the Contextflo connector's `executeQuery` error handling and extended with
  * the cases this server's safety layers produce.
  */
 

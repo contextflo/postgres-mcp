@@ -2,7 +2,7 @@
 
 The analytics MCP server for Postgres. Read-only by construction, with schema context that makes answers correct.
 
-Built and maintained by [ContextFlo](https://contextflo.com/postgres-mcp).
+Built and maintained by [Contextflo](https://contextflo.com/postgres-mcp).
 
 A drop-in replacement for the archived `@modelcontextprotocol/server-postgres`, which shipped with a
 [SQL injection vulnerability](https://securitylabs.datadoghq.com/articles/mcp-vulnerability-case-study-SQL-injection-in-the-postgresql-mcp-server/)

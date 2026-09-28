@@ -21,7 +21,7 @@
   "bugs": {
     "url": "https://github.com/contextflo/postgres-mcp/issues"
   },
-  "author": "ContextFlo (https://contextflo.com)",
+  "author": "Contextflo (https://contextflo.com)",
   "license": "MIT",
   "mcpName": "io.github.contextflo/postgres-mcp",
   "type": "module",
