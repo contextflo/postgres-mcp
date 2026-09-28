@@ -118,6 +118,12 @@ const DENIED_FUNCTIONS = new Set([
   'pg_promote',
   'pg_create_restore_point',
   'pg_notify',
+  'pg_log_backend_memory_contexts',
+  // Write to the WAL even inside a read-only transaction.
+  'pg_log_standby_snapshot',
+  // Sequences. The read-only transaction refuses these too; this names them up front.
+  'nextval',
+  'setval',
   // Session-level advisory locks survive the ROLLBACK and stay on the pooled connection.
   'pg_advisory_lock',
   'pg_advisory_lock_shared',
@@ -140,12 +146,25 @@ const DENIED_FUNCTION_PREFIXES = [
   'dblink',
   // Directory listings of the server's filesystem.
   'pg_ls_',
-  // Replication slots and origins: creating, dropping, or consuming them changes server state.
+  // Logical decoding. pg_logical_emit_message writes a message into the WAL, and so into
+  // every change-data-capture stream, and Postgres allows it in a read-only transaction.
+  // The slot functions consume or peek at changes.
+  'pg_logical_',
+  // Replication slots and origins: creating, copying, advancing, or dropping them changes
+  // server state.
   'pg_create_logical_replication_slot',
   'pg_create_physical_replication_slot',
+  'pg_copy_logical_replication_slot',
+  'pg_copy_physical_replication_slot',
+  'pg_replication_slot_advance',
   'pg_drop_replication_slot',
-  'pg_logical_slot_',
   'pg_replication_origin_',
+  // Server-wide state: statistics resets, backups, and WAL replay on a standby.
+  'pg_stat_reset',
+  'pg_backup_',
+  'pg_start_backup',
+  'pg_stop_backup',
+  'pg_wal_replay_',
 ]
 
 function isDeniedFunction(name: string): boolean {

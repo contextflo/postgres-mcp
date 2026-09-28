@@ -135,7 +135,8 @@ That parses as a `SelectStmt`. A validator checking only the statement type runs
 
 The same walk rejects built-in functions that act outside the transaction even inside a plain `SELECT`:
 `dblink` (a second connection, which is not read-only), `query_to_xml` (runs a SQL string the parser never sees),
-`pg_terminate_backend`, session-level advisory locks, `set_config`, and the server-filesystem functions.
+`pg_terminate_backend`, session-level advisory locks, `set_config`, logical decoding functions such as
+`pg_logical_emit_message` that write to the WAL even in a read-only transaction, and the server-filesystem functions.
 
 **4. A read-only database role.** The layers above are code, and code has bugs. A role that cannot write is enforced
 by Postgres regardless, which is why creating one is the first step of [Setup](#setup). The server warns on startup

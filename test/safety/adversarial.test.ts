@@ -173,6 +173,20 @@ describe('functions that act outside the read-only transaction', () => {
     // Replication slots.
     "SELECT pg_create_logical_replication_slot('s', 'pgoutput')",
     "SELECT * FROM pg_logical_slot_get_changes('s', NULL, NULL)",
+    // Writes to the WAL, and Postgres allows it in a read-only transaction.
+    "SELECT pg_logical_emit_message(false, 'prefix', 'payload')",
+    "SELECT pg_catalog.pg_logical_emit_message(true, 'p', repeat('x', 1000000))",
+    'SELECT pg_log_standby_snapshot()',
+    "SELECT pg_replication_slot_advance('s', '0/0')",
+    "SELECT pg_copy_logical_replication_slot('s', 't')",
+    // Server-wide state.
+    'SELECT pg_stat_reset()',
+    "SELECT pg_stat_reset_single_table_counters('orders'::regclass)",
+    "SELECT pg_backup_start('label')",
+    'SELECT pg_wal_replay_pause()',
+    // Sequences: refused by the read-only transaction as well, but named here first.
+    "SELECT nextval('orders_id_seq')",
+    "SELECT setval('orders_id_seq', 1)",
     // Hidden deeper in the tree.
     "SELECT id FROM users WHERE EXISTS (SELECT pg_advisory_lock(id))",
     "WITH x AS (SELECT pg_read_file('/etc/passwd') AS f) SELECT * FROM x",
