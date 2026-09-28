@@ -52,6 +52,12 @@ DATABASE_URL='postgresql://mcp_readonly:change-me@db.example.com:5432/mydb'
 Keep the quotes: hosted providers add `?sslmode=require&...`, and the `&` needs them. The server reads `DATABASE_URL`
 from `.env` in the directory it starts in, so the connection string never appears on a command line.
 
+Point it at a read replica or a branch rather than your primary if you can. Read-only stops writes, not load: an agent
+exploring your data can run a full-table scan or a heavy join, and on the primary that competes with your application.
+Neon and Supabase can branch or replicate a database in a few clicks, and RDS, Cloud SQL, and most other hosts offer
+read replicas. The statement timeout (30 seconds by default, `--statement-timeout`) and the row cap limit how long one
+query runs and how much it returns; they do not make it cheap.
+
 **3. Generate the context file:**
 
 ```bash
