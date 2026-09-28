@@ -153,6 +153,24 @@ describe.skipIf(!connectionString)('data fidelity and catalog shape against a li
     ])('refuses %s', async (sql, message) => {
       await expect(check(sql)).rejects.toThrowError(message)
     })
+
+    it('does not let a user-defined function borrow an allowlisted name', async () => {
+      // Created here and dropped after, so an unqualified random() in the other tests stays unambiguous.
+      await setupClient.query(
+        `CREATE FUNCTION ${SCHEMA}.random() RETURNS double precision VOLATILE LANGUAGE sql AS 'SELECT 0.5'`
+      )
+      try {
+        const fresh = FunctionPolicy.fromDatabase(database)
+        await expect(
+          fresh.check([...findFunctionCalls(validateReadOnlySql(`SELECT ${SCHEMA}.random()`))])
+        ).rejects.toThrowError(/volatile/)
+        await expect(
+          fresh.check([...findFunctionCalls(validateReadOnlySql('SELECT pg_catalog.random()'))])
+        ).resolves.toBeUndefined()
+      } finally {
+        await setupClient.query(`DROP FUNCTION ${SCHEMA}.random()`)
+      }
+    })
   })
 
   it('reports enum values, in order', async () => {
