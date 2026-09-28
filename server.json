@@ -3,16 +3,17 @@
   "name": "io.github.contextflo/postgres-mcp",
   "title": "Postgres (read-only)",
   "description": "Read-only Postgres: drop-in for the archived server-postgres, with schema context.",
+  "websiteUrl": "https://contextflo.com/postgres-mcp",
   "repository": {
     "url": "https://github.com/contextflo/postgres-mcp",
     "source": "github"
   },
-  "version": "0.1.2",
+  "version": "0.1.3",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "@contextflo/postgres-mcp",
-      "version": "0.1.2",
+      "version": "0.1.3",
       "transport": {
         "type": "stdio"
       },

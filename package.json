@@ -1,6 +1,6 @@
 {
   "name": "@contextflo/postgres-mcp",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Read-only Postgres MCP server: a drop-in replacement for the archived @modelcontextprotocol/server-postgres, with schema context for correct answers.",
   "keywords": [
     "mcp",
@@ -21,7 +21,7 @@
   "bugs": {
     "url": "https://github.com/contextflo/postgres-mcp/issues"
   },
-  "author": "ContextFlo (https://contextflo.com)",
+  "author": "Contextflo (https://contextflo.com)",
   "license": "MIT",
   "mcpName": "io.github.contextflo/postgres-mcp",
   "type": "module",
