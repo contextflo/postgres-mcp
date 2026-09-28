@@ -184,7 +184,8 @@ Four deliberate differences:
 ```
 
 `DATABASE_URL` supplies the connection string if you do not pass one, from the environment or from `.env` in the
-current directory. `AUTH_TOKEN`, with `--http`, requires that
+current directory. The server connects on first use: without a connection string it still starts and lists its tools,
+and each tool call says what is missing. `AUTH_TOKEN`, with `--http`, requires that
 value as a bearer token.
 
 **Connection poolers.** PgBouncer (and so the pooled connection strings from Supabase, Neon, and others) refuses

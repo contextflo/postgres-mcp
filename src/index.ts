@@ -6,7 +6,7 @@ import { parse as parseConnectionString } from 'pg-connection-string'
 import { ContextFileExists, readOnlyRoleSnippet, runInit } from './context/init.js'
 import { ContextStore } from './context/store.js'
 import { roleCanWrite } from './db/introspection.js'
-import { Database } from './db/pool.js'
+import { Database, LazyDatabase } from './db/pool.js'
 import { startHttpServer } from './http.js'
 import { QueryLog } from './log.js'
 import { FunctionPolicy } from './safety/functions.js'
@@ -26,22 +26,12 @@ async function main(): Promise<void> {
   // The WASM parser must be loaded before any query is validated.
   await ensureParserReady()
 
-  const database = await Database.connect({
-    connectionString: config.connectionString,
-    statementTimeoutMs: config.statementTimeoutMs,
-  })
-
-  try {
-    if (config.command === 'init') {
-      await initialiseContextFile(database, config)
-      return
-    }
-
-    await serve(database, config)
-  } catch (error) {
-    await database.close().catch(() => {})
-    throw error
+  if (config.command === 'init') {
+    await initialiseContextFile(config)
+    return
   }
+
+  await serve(config)
 }
 
 function readConfig(): ServerConfig {
@@ -61,11 +51,16 @@ function readConfig(): ServerConfig {
   }
 }
 
-async function initialiseContextFile(database: Database, config: ServerConfig): Promise<void> {
+async function initialiseContextFile(config: ServerConfig): Promise<void> {
+  // parseArgs guarantees a connection string for init.
+  const connectionString = config.connectionString!
+  const database = await Database.connect({ connectionString, statementTimeoutMs: config.statementTimeoutMs })
+
   let result
   try {
     result = await runInit(database, config.contextFile)
   } catch (error) {
+    await database.close().catch(() => {})
     if (error instanceof ContextFileExists) {
       console.error(error.message)
       process.exit(1)
@@ -73,7 +68,7 @@ async function initialiseContextFile(database: Database, config: ServerConfig): 
     throw error
   }
 
-  const databaseName = parseConnectionString(config.connectionString).database || 'postgres'
+  const databaseName = parseConnectionString(connectionString).database || 'postgres'
 
   console.log(`Wrote ${result.path}`)
   console.log(
@@ -95,8 +90,19 @@ async function initialiseContextFile(database: Database, config: ServerConfig): 
   await database.close()
 }
 
-async function serve(database: Database, config: ServerConfig): Promise<void> {
-  await database.warnOnWeakSetup()
+async function serve(config: ServerConfig): Promise<void> {
+  // Connects on first use, so the server starts and lists its tools without a database.
+  const database = new LazyDatabase(
+    config.connectionString
+      ? { connectionString: config.connectionString, statementTimeoutMs: config.statementTimeoutMs }
+      : null
+  )
+  if (!config.connectionString) {
+    console.error(
+      '[postgres-mcp] no connection string: set DATABASE_URL in the environment or .env. Tools will ' +
+        'report this until one is configured.'
+    )
+  }
 
   const contextFile = await ContextStore.open(config.contextFile, { writable: config.contextWrites })
   const contextDocument = contextFile.current
@@ -119,7 +125,7 @@ async function serve(database: Database, config: ServerConfig): Promise<void> {
     console.error(`[postgres-mcp] logging queries to ${log.filePath}`)
   }
 
-  const functions = await FunctionPolicy.fromDatabase(database)
+  const functions = FunctionPolicy.fromDatabase(database)
 
   const toolContext = {
     database,

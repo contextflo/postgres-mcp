@@ -1,6 +1,7 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { parse as parseConnectionString } from 'pg-connection-string'
 import {
+  type CallToolResult,
   CallToolRequestSchema,
   ListResourcesRequestSchema,
   ListToolsRequestSchema,
@@ -17,7 +18,7 @@ export interface ServerDeps {
   context: ToolContext
   version: string
   /** Connection string, used only to build resource URIs. The password is stripped. */
-  connectionString: string
+  connectionString: string | undefined
 }
 
 const SCHEMA_PATH = 'schema'
@@ -46,18 +47,15 @@ export function createServer({ context, version, connectionString }: ServerDeps)
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const args = request.params.arguments
 
-    switch (request.params.name) {
-      case QUERY_TOOL.name:
-        return runQueryTool(context, args)
-      case LIST_TABLES_TOOL.name:
-        return runListTablesTool(context, args)
-      case GET_TABLE_CONTEXT_TOOL.name:
-        return runGetTableContextTool(context, args)
-      case ADD_TABLE_CONTEXT_TOOL.name:
-        if (!context.contextFile.writable) throw new Error(`Unknown tool: ${request.params.name}`)
-        return runAddTableContextTool(context, args)
-      default:
-        throw new Error(`Unknown tool: ${request.params.name}`)
+    const run = toolRunner(context, request.params.name)
+    if (!run) throw new Error(`Unknown tool: ${request.params.name}`)
+
+    try {
+      return await run(args)
+    } catch (error) {
+      // Typically no database configured, or none reachable. Returned as a tool error so the
+      // model can tell the user, instead of the client showing a protocol failure.
+      return { content: [{ type: 'text', text: error instanceof Error ? error.message : String(error) }], isError: true }
     }
   })
 
@@ -76,7 +74,7 @@ export function createServer({ context, version, connectionString }: ServerDeps)
  * which is why schema discovery lives in the tools — this is compatibility, not the path
  * we expect models to take.
  */
-function registerResources(server: Server, context: ToolContext, connectionString: string): void {
+function registerResources(server: Server, context: ToolContext, connectionString: string | undefined): void {
   const baseUrl = buildResourceBaseUrl(connectionString)
 
   server.setRequestHandler(ListResourcesRequestSchema, async () => {
@@ -124,7 +122,25 @@ function registerResources(server: Server, context: ToolContext, connectionStrin
  * `new URL(connectionString)`, which throws on `host=... dbname=...` strings and socket
  * paths. The password is never included.
  */
-function buildResourceBaseUrl(connectionString: string): URL {
+type ToolRunner = (args: Record<string, unknown> | undefined) => Promise<CallToolResult>
+
+function toolRunner(context: ToolContext, name: string): ToolRunner | undefined {
+  switch (name) {
+    case QUERY_TOOL.name:
+      return (args) => runQueryTool(context, args)
+    case LIST_TABLES_TOOL.name:
+      return (args) => runListTablesTool(context, args)
+    case GET_TABLE_CONTEXT_TOOL.name:
+      return (args) => runGetTableContextTool(context, args)
+    case ADD_TABLE_CONTEXT_TOOL.name:
+      return context.contextFile.writable ? (args) => runAddTableContextTool(context, args) : undefined
+    default:
+      return undefined
+  }
+}
+
+function buildResourceBaseUrl(connectionString: string | undefined): URL {
+  if (!connectionString) return new URL('postgres://localhost/postgres/')
   const { host, port, database, user } = parseConnectionString(connectionString)
 
   let url: URL

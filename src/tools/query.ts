@@ -41,13 +41,13 @@ export async function runQueryTool(
 
   try {
     const statement = validateReadOnlySql(sql)
+    // Reads the function catalog on first use, so this can fail on connecting too.
     await context.functions.check([...findFunctionCalls(statement)])
   } catch (error) {
-    if (error instanceof SafetyError) {
-      context.log.record({ sql, outcome: 'rejected', message: error.message })
-      return toolError(error.message)
-    }
-    throw error
+    const rejected = error instanceof SafetyError
+    const message = error instanceof Error ? error.message : String(error)
+    context.log.record({ sql, outcome: rejected ? 'rejected' : 'error', message })
+    return toolError(message)
   }
 
   const startedAt = Date.now()

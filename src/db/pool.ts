@@ -58,7 +58,13 @@ export interface ReadOnlyResult {
   truncated: boolean
 }
 
-export class Database {
+/** What the tools need from a database. Both {@link Database} and {@link LazyDatabase} provide it. */
+export interface Queryable {
+  runReadOnly(sql: string, maxRows: number): Promise<ReadOnlyResult>
+  internalQuery<T extends pg.QueryResultRow>(text: string, values?: unknown[]): Promise<T[]>
+}
+
+export class Database implements Queryable {
   private readonly pool: pg.Pool
   private readonly statementTimeoutMs: number
   /** True when startup options were refused and we connected without them. */
@@ -246,4 +252,58 @@ function buildPoolConfig(options: DatabaseOptions, withStartupOptions: boolean):
   if (parsed.ssl !== undefined) config.ssl = parsed.ssl as pg.PoolConfig['ssl']
 
   return config
+}
+
+/**
+ * A database the server connects to on first use, not at startup. The server can then
+ * start, and list its tools, before a database is reachable or even configured; a
+ * directory like Glama or the Docker catalog introspects it that way. A failed connection
+ * is reported on the tool call that needed it and retried on the next one.
+ */
+export class LazyDatabase implements Queryable {
+  private readonly options: DatabaseOptions | null
+  private connecting: Promise<Database> | null = null
+
+  /** `options` is null when no connection string was given; every call then says so. */
+  constructor(options: DatabaseOptions | null) {
+    this.options = options
+  }
+
+  async runReadOnly(sql: string, maxRows: number): Promise<ReadOnlyResult> {
+    return (await this.connected()).runReadOnly(sql, maxRows)
+  }
+
+  async internalQuery<T extends pg.QueryResultRow>(text: string, values: unknown[] = []): Promise<T[]> {
+    return (await this.connected()).internalQuery<T>(text, values)
+  }
+
+  async close(): Promise<void> {
+    const connecting = this.connecting
+    if (connecting === null) return
+    await (await connecting.catch(() => null))?.close()
+  }
+
+  private connected(): Promise<Database> {
+    if (this.options === null) {
+      return Promise.reject(
+        new Error(
+          'No database is configured. Set DATABASE_URL in the environment or in .env, or pass a ' +
+            'connection string, then restart the server.'
+        )
+      )
+    }
+
+    this.connecting ??= Database.connect(this.options).then(
+      (database) => {
+        void database.warnOnWeakSetup()
+        return database
+      },
+      (error: unknown) => {
+        // Let the next call try again: the database may just have been down.
+        this.connecting = null
+        throw new Error(`Could not connect to Postgres: ${error instanceof Error ? error.message : String(error)}`)
+      }
+    )
+    return this.connecting
+  }
 }

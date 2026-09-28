@@ -1,4 +1,4 @@
-import type { Database } from '../db/pool.js'
+import type { Queryable } from '../db/pool.js'
 import { SafetyError } from './errors.js'
 import type { FunctionCall } from './walk.js'
 
@@ -59,8 +59,11 @@ export class FunctionPolicy {
     this.load = load
   }
 
-  /** Reads every function the connected role can see from pg_proc. */
-  static async fromDatabase(database: Database): Promise<FunctionPolicy> {
+  /**
+   * Reads every function the connected role can see from pg_proc, on the first check
+   * rather than now, so the server can start before the database is reachable.
+   */
+  static fromDatabase(database: Queryable): FunctionPolicy {
     const policy = new FunctionPolicy(async () =>
       (
         await database.internalQuery<{ schema: string; name: string; volatility: 'i' | 's' | 'v'; security_definer: boolean }>(
@@ -71,7 +74,6 @@ export class FunctionPolicy {
         )
       ).map((row) => ({ schema: row.schema, name: row.name, volatility: row.volatility, securityDefiner: row.security_definer }))
     )
-    await policy.reload()
     return policy
   }
 
@@ -88,7 +90,10 @@ export class FunctionPolicy {
    * the server started.
    */
   async check(calls: FunctionCall[]): Promise<void> {
-    if (calls.some((call) => this.candidates(call).length === 0) && this.canReload()) {
+    if (calls.length === 0) return
+    if (this.loadedAt === 0) {
+      await this.reload()
+    } else if (calls.some((call) => this.candidates(call).length === 0) && this.canReload()) {
       await this.reload()
     }
 

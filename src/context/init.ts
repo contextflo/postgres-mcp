@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { getTableContext, listTables, type TableContext } from '../db/introspection.js'
-import type { Database } from '../db/pool.js'
+import type { Queryable } from '../db/pool.js'
 import { CONTEXT_FILE_HEADER } from './context-file.js'
 
 /**
@@ -33,7 +33,7 @@ export class ContextFileExists extends Error {
   }
 }
 
-export async function runInit(database: Database, contextFile: string): Promise<InitResult> {
+export async function runInit(database: Queryable, contextFile: string): Promise<InitResult> {
   const { tables, totalMatches } = await listTables(database, { limit: MAX_TABLES })
   const described = await getTableContext(
     database,
